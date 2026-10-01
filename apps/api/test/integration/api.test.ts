@@ -225,6 +225,16 @@ describe.skipIf(!TEST_DATABASE_URL)('API integration', () => {
       expect(list.body.items).toHaveLength(1);
     });
 
+    it('sends to the signed-in user with the "Status Tracker" subject when no recipients are given', async () => {
+      const agent = await signUp('me@example.com');
+      const res = await agent.post('/api/reports/email').send({ trains });
+      expect(res.status).toBe(201);
+      expect(res.body.recipients).toEqual([{ email: 'me@example.com', status: 'SENT', error: null }]);
+      expect(ctx.mailer.sent.map((m) => m.to)).toEqual(['me@example.com']);
+      expect(ctx.mailer.sent[0]!.subject).toBe('[DEMO] Status Tracker');
+      expect(ctx.mailer.sent[0]!.text).toContain('Train details (2):');
+    });
+
     it('records partial failures per recipient', async () => {
       const agent = await signUp();
       ctx.mailer.failFor.add('bad@example.com');

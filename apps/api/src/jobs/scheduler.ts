@@ -19,11 +19,13 @@ const schedulerId = (subscriptionId: string) => `monitor:${subscriptionId}`;
 export class BullMonitoringScheduler implements MonitoringScheduler {
   readonly queue: Queue<MonitoringJobData>;
 
-  constructor(connection: Redis) {
+  constructor(connection: Redis, onError: (err: Error) => void = () => {}) {
     this.queue = new Queue<MonitoringJobData>(MONITORING_QUEUE, {
       connection,
       defaultJobOptions: { removeOnComplete: 200, removeOnFail: 500 },
     });
+    // Without a listener, a Redis outage would surface as an uncaught 'error' event.
+    this.queue.on('error', onError);
   }
 
   async schedule(subscriptionId: string, intervalMinutes: number): Promise<void> {

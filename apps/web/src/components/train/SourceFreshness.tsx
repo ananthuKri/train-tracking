@@ -71,8 +71,8 @@ export function SourceFreshness({
             Source: <span className="font-medium text-foreground">{status.provider.name}</span>
           </span>
         </span>
-        {status.provider.isDemo && <DemoBadge />}
-        <FreshnessBadge status={status} />
+        {/* For demo providers freshnessLabel() is "DEMO DATA" — render it once, as the high-contrast demo badge. */}
+        {status.provider.isDemo ? <DemoBadge /> : <FreshnessBadge status={status} />}
         <span className="inline-flex items-center gap-1.5">
           <RadioTower aria-hidden className="size-3.5" />
           {status.providerUpdatedAt ? (

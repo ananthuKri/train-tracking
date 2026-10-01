@@ -15,11 +15,13 @@ import {
   Mail,
   Send,
   TrainTrack,
+  UserRound,
 } from 'lucide-react';
 import {
   MAX_TRAINS_PER_REQUEST,
   REPORT_FIELDS,
   REPORT_FIELD_IDS,
+  REPORT_SUBJECT,
   formatJourneyDate,
   resolveReportFields,
   type EmailReportResult,
@@ -28,7 +30,6 @@ import {
 } from '@railtrack/shared';
 import { isApiError } from '@/api/client';
 import { useConfig, useMe, useReportPreview, useReports, useSendReport } from '@/api/hooks';
-import { EmailChipsInput } from '@/components/common/EmailChipsInput';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageHeader } from '@/components/common/PageHeader';
 import { RequireAuth } from '@/components/common/RequireAuth';
@@ -42,7 +43,6 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Textarea } from '@/components/ui/textarea';
 import { DemoBadge } from '@/components/train/badges';
 import { TrainErrorState } from '@/components/train/TrainErrorState';
 import { useDocumentTitle } from '@/hooks/useDocumentTitle';
@@ -88,7 +88,6 @@ function Composer() {
   const { data: user } = useMe();
   const results = useDashboardStore((s) => s.results);
   const selectedKeys = useDashboardStore((s) => s.selectedKeys);
-  const uploadEmails = useDashboardStore((s) => s.uploadEmails);
 
   // Candidate trains: ?trains= param first, else dashboard selection, else the whole dashboard.
   const candidates: TrainRef[] = useMemo(() => {
@@ -105,11 +104,8 @@ function Composer() {
     setIncluded(candidatesKey ? candidatesKey.split(',').slice(0, MAX_TRAINS_PER_REQUEST) : []);
   }, [candidatesKey]);
 
-  const [recipients, setRecipients] = useState<string[]>(() => uploadEmails.slice(0, 20));
   const [fullReport, setFullReport] = useState(true);
   const [fields, setFields] = useState<ReportFieldId[]>([...REPORT_FIELD_IDS]);
-  const [subject, setSubject] = useState('');
-  const [message, setMessage] = useState('');
   const [includeShareLink, setIncludeShareLink] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -122,41 +118,39 @@ function Composer() {
   const emailEnabled = config?.features.email !== false;
   const shareEnabled = config?.features.shareLinks !== false;
 
+  // Subject ("Status Tracker") and message (the trains' details) are filled in by the server;
+  // the report is sent to the signed-in user's own address.
   const body = () => ({
     trains,
     fields: fullReport ? undefined : resolveReportFields(fields),
     includeShareLink: shareEnabled && includeShareLink,
-    subject: subject.trim() || undefined,
-    message: message.trim() || undefined,
   });
 
-  const validate = (needRecipients: boolean): boolean => {
+  const validate = (): boolean => {
     let problem: string | null = null;
     if (trains.length === 0) problem = 'Select at least one train.';
     else if (!fullReport && fields.length === 0) problem = 'Choose at least one field, or send the full report.';
-    else if (needRecipients && recipients.length === 0) problem = 'Add at least one recipient.';
     setFormError(problem);
     return problem === null;
   };
 
   const onPreview = () => {
-    if (!validate(false)) return;
+    if (!validate()) return;
     preview.mutate(body());
   };
 
   const onSend = (e: FormEvent) => {
     e.preventDefault();
-    if (!validate(true)) return;
+    if (!validate()) return;
     send.mutate(
-      { ...body(), recipients },
+      body(),
       {
         onSuccess: (result) => {
           setSent(result);
           const sentCount = result.recipients.filter((r) => r.status === 'SENT').length;
           if (result.status === 'FAILED') toast.error('Report could not be sent', { description: result.error ?? undefined });
           else if (result.status === 'PARTIAL') toast.warning(`Sent to ${sentCount} of ${result.recipients.length} recipients`);
-          else
-            toast.success(result.delivery === 'outbox' ? 'Report written to the dev outbox' : `Report sent to ${plural(result.recipients.length, 'recipient')}`);
+          else toast.success(result.delivery === 'outbox' ? 'Report written to the dev outbox' : `Report sent to ${result.recipients[0]?.email ?? 'your email'}`);
         },
       },
     );
@@ -168,7 +162,7 @@ function Composer() {
     <div className="space-y-8">
       <PageHeader
         title="Email report"
-        description="Send the status of selected trains to one or more people. Reports show the data source, freshness and demo labels."
+        description="Email the status of selected trains to yourself. Reports show the data source, freshness and demo labels."
       />
 
       {!emailEnabled && (
@@ -231,16 +225,25 @@ function Composer() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Recipients</CardTitle>
-                {uploadEmails.length > 0 && <CardDescription>Prefilled from the email column of your upload.</CardDescription>}
+                <CardTitle>Send to</CardTitle>
+                <CardDescription>Reports go to the email address of your account.</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <EmailChipsInput value={recipients} onChange={setRecipients} max={20} />
-                {user && !recipients.includes(user.email.toLowerCase()) && (
-                  <Button type="button" variant="link" size="sm" className="h-auto p-0" onClick={() => setRecipients((r) => [...r, user.email.toLowerCase()])}>
-                    Add myself ({user.email})
-                  </Button>
-                )}
+              <CardContent>
+                <div className="flex items-center gap-3 rounded-md border bg-muted/40 p-3" data-testid="report-recipient">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                    <UserRound aria-hidden className="size-5" />
+                  </span>
+                  <div className="min-w-0">
+                    {user ? (
+                      <>
+                        <p className="truncate font-medium">{user.name || user.email}</p>
+                        <p className="truncate text-sm text-muted-foreground">{user.email}</p>
+                      </>
+                    ) : (
+                      <Skeleton className="h-9 w-48" />
+                    )}
+                  </div>
+                </div>
               </CardContent>
             </Card>
 
@@ -269,7 +272,7 @@ function Composer() {
                   {REPORT_FIELDS.map((f) => {
                     const id = `field-${f.id}`;
                     return (
-                      <div key={f.id} className={cn('flex items-start gap-2', fullReport && 'opacity-70')}>
+                      <div key={f.id} className="flex items-start gap-2">
                         <Checkbox
                           id={id}
                           checked={fullReport || fields.includes(f.id)}
@@ -277,7 +280,7 @@ function Composer() {
                           data-testid={`field-${f.id}`}
                           onCheckedChange={(v) => setFields((cur) => (v === true ? [...cur, f.id] : cur.filter((x) => x !== f.id)))}
                         />
-                        <Label htmlFor={id} className="flex flex-col items-start gap-0.5 font-normal">
+                        <Label htmlFor={id} className="flex flex-col items-start gap-0.5 font-normal peer-disabled:cursor-default peer-disabled:opacity-80">
                           <span className="font-medium">{f.label}</span>
                           <span className="text-xs text-muted-foreground">{f.description}</span>
                         </Label>
@@ -289,28 +292,15 @@ function Composer() {
                   The train number is always included.
                 </p>
 
-                <div className="space-y-2">
-                  <Label htmlFor="report-subject">Subject (optional)</Label>
-                  <Input
-                    id="report-subject"
-                    maxLength={150}
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    placeholder="Train status report"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="report-message">Message (optional)</Label>
-                  <Textarea
-                    id="report-message"
-                    maxLength={1000}
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    rows={3}
-                    placeholder="Add a note for the recipients"
-                  />
-                  <p className="text-right text-xs text-muted-foreground">{message.length}/1000</p>
-                </div>
+                <dl className="grid gap-x-3 gap-y-1 rounded-md border p-3 text-sm sm:grid-cols-[auto_1fr]" data-testid="report-email-summary">
+                  <dt className="text-muted-foreground">Subject</dt>
+                  <dd className="font-medium">
+                    {config?.demoMode ? '[DEMO] ' : ''}
+                    {REPORT_SUBJECT}
+                  </dd>
+                  <dt className="text-muted-foreground">Message</dt>
+                  <dd>Details of the selected trains — status, delay, last and next station — followed by the selected fields and a CSV attachment.</dd>
+                </dl>
 
                 <div className="flex items-start gap-3 rounded-md border p-3">
                   <Switch
@@ -356,7 +346,7 @@ function Composer() {
               </Button>
               <Button type="submit" disabled={send.isPending || !emailEnabled} data-testid="send-report">
                 {send.isPending ? <LoaderCircle aria-hidden className="animate-spin" /> : <Send aria-hidden />}
-                {send.isPending ? 'Sending…' : `Send to ${plural(recipients.length, 'recipient')}`}
+                {send.isPending ? 'Sending…' : 'Send to my email'}
               </Button>
             </div>
           </form>

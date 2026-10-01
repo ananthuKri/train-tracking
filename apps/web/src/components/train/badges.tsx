@@ -108,16 +108,19 @@ export function TrainGlyph({
   color,
   className,
   dashed = false,
+  fill = '#ffffff',
 }: {
   shape: TrainShape;
   color: string;
   className?: string;
   dashed?: boolean;
+  /** Fill for the dashed (estimated) variant. */
+  fill?: string;
 }) {
   const points = SHAPE_POINTS[shape];
   const common = dashed
-    ? { fill: '#ffffff', stroke: color, strokeWidth: 2.6, strokeDasharray: '3.2 2.4' }
-    : { fill: color, stroke: '#ffffff', strokeWidth: 2 };
+    ? { fill, stroke: color, strokeWidth: 2.6, strokeDasharray: '3.2 2.4' }
+    : { fill: color, stroke: color === 'currentColor' ? 'none' : '#ffffff', strokeWidth: 2 };
   return (
     <svg viewBox="0 0 30 30" aria-hidden focusable="false" className={cn('size-4 shrink-0', className)}>
       {points === null ? <circle cx="15" cy="15" r="10.5" {...common} /> : <polygon points={points} {...common} />}

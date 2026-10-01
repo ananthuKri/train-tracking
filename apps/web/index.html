@@ -4,29 +4,12 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="light dark" />
+    <meta name="color-scheme" content="light" />
     <meta
       name="description"
       content="RailTrack Live — track Indian Railways trains from licensed data providers, visualise journeys on a map and email reports."
     />
     <title>RailTrack Live</title>
-    <script>
-      // Apply the saved/system colour theme before first paint to avoid a flash.
-      (function () {
-        try {
-          var theme = 'system';
-          var raw = localStorage.getItem('railtrack-theme');
-          if (raw) {
-            var parsed = JSON.parse(raw);
-            if (parsed && parsed.state && parsed.state.theme) theme = parsed.state.theme;
-          }
-          var dark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-          document.documentElement.classList.toggle('dark', dark);
-        } catch (e) {
-          /* ignore */
-        }
-      })();
-    </script>
   </head>
   <body>
     <div id="root"></div>

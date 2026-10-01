@@ -38,11 +38,11 @@ export const RAILRADAR_INFO: ProviderInfo = {
 export class RailRadarProvider extends HttpProvider {
   readonly id = 'railradar' as const;
   readonly info = RAILRADAR_INFO;
-  // Conservative defaults that fit the smallest paid plan's burst limit (30/min).
+  // Defaults fit the free Sandbox plan's burst limit (10/min); raise PROVIDER_MAX_PER_MINUTE on paid plans.
   readonly limits: ProviderLimits = {
     maxConcurrent: 2,
     minIntervalMs: 1_000,
-    maxPerMinute: 25,
+    maxPerMinute: 10,
     liveCacheSeconds: 120,
     routeCacheSeconds: 86_400,
     minPollMinutes: 10,
@@ -117,7 +117,8 @@ export function normalizeRailRadarLive(data: Json, trainNumber: string, journeyD
     const scheduledArrival = isoOrNull(r.scheduledArrival);
     const scheduledDeparture = isoOrNull(r.scheduledDeparture);
     return {
-      sequence: toNumberOrNull(r.sequence) ?? i + 1,
+      // RailRadar can return fractional sequences (e.g. 12.5); our model orders stops by position.
+      sequence: i + 1,
       stationCode: String(r.stationCode ?? '').toUpperCase(),
       stationName: str(r.stationName) ?? stationRef(String(r.stationCode ?? '')).name,
       lat: toNumberOrNull(r.lat),
@@ -171,6 +172,10 @@ export function normalizeRailRadarLive(data: Json, trainNumber: string, journeyD
     nextCode = stops.find((s) => s.sequence > currentStop.sequence && s.isHalt)?.stationCode ?? null;
   }
   const nextStop = nextCode ? stops.find((s) => s.stationCode === nextCode && (!currentStop || s.sequence > currentStop.sequence)) : undefined;
+  // Before departure RailRadar points currentLocation at the origin; that is where the train will
+  // leave from, not a reported position, so the next event is the origin departure.
+  const waiting = state === 'not_started' || state === 'rescheduled';
+  const statusText = str(data.statusText) ?? str(data.status);
 
   return {
     trainNumber: str(data.trainNumber) ?? str(train.number) ?? trainNumber,
@@ -184,20 +189,20 @@ export function normalizeRailRadarLive(data: Json, trainNumber: string, journeyD
     actualArrival: state === 'arrived' ? (lastStop?.actualArrival ?? null) : null,
     expectedArrival: state === 'arrived' ? null : (lastStop?.expectedArrival ?? null),
     state,
-    stateDetail: str(data.statusText) ?? str(data.status),
-    lastReportedStation: currentStop ? { code: currentStop.stationCode, name: currentStop.stationName } : currentCode ? stationRef(currentCode) : null,
-    lastReportedEvent,
-    lastReportedAt: currentStop ? (lastReportedEvent === 'departed' ? currentStop.actualDeparture : currentStop.actualArrival) : null,
+    stateDetail: statusText ? statusText.replace(/[-_]+/g, ' ').replace(/^\w/, (c) => c.toUpperCase()) : null,
+    lastReportedStation: waiting ? null : currentStop ? { code: currentStop.stationCode, name: currentStop.stationName } : currentCode ? stationRef(currentCode) : null,
+    lastReportedEvent: waiting ? null : lastReportedEvent,
+    lastReportedAt: waiting || !currentStop ? null : lastReportedEvent === 'departed' ? currentStop.actualDeparture : currentStop.actualArrival,
     previousStation: str(prevHalt.stationCode) ? stationRef(String(prevHalt.stationCode), str(prevHalt.stationName)) : null,
-    nextStation: nextStop ? { code: nextStop.stationCode, name: nextStop.stationName } : null,
-    nextStationEta: nextStop?.expectedArrival ?? null,
+    nextStation: waiting && firstStop ? { code: firstStop.stationCode, name: firstStop.stationName } : nextStop ? { code: nextStop.stationCode, name: nextStop.stationName } : null,
+    nextStationEta: waiting ? (firstStop?.expectedDeparture ?? firstStop?.scheduledDeparture ?? null) : (nextStop?.expectedArrival ?? null),
     delayMinutes: toNumberOrNull(data.delayMinutes),
-    platform: (lastReportedEvent === 'arrived' ? currentStop?.platform : nextStop?.platform) ?? null,
+    platform: (waiting ? firstStop?.platform : lastReportedEvent === 'arrived' ? currentStop?.platform : nextStop?.platform) ?? null,
     distanceTravelledKm: null,
     distanceRemainingKm: null,
     totalDistanceKm: toNumberOrNull(train.distance) ?? lastStop?.distanceKm ?? null,
     progressPercent: null,
-    position: railRadarPosition(current, currentStop, nextStop, now),
+    position: waiting ? null : railRadarPosition(current, currentStop, nextStop, now),
     stops,
     exceptions,
     provider: RAILRADAR_INFO,
@@ -270,7 +275,8 @@ export function normalizeRailRadarRoute(data: Json, trainNumber: string, now: Da
     const arrivalDay = toNumberOrNull(r.arrivalDay);
     const departureDay = toNumberOrNull(r.departureDay);
     return {
-      sequence: toNumberOrNull(r.sequence) ?? i + 1,
+      // RailRadar can return fractional sequences (e.g. 12.5); our model orders stops by position.
+      sequence: i + 1,
       stationCode: code,
       stationName: str(station.name) ?? str(r.stationName) ?? stationRef(code).name,
       lat: toNumberOrNull(r.lat ?? station.lat),

@@ -8,6 +8,7 @@ import {
   osmLink,
   positionLabel,
   REPORT_FIELDS,
+  REPORT_SUBJECT,
   resolveReportFields,
   STATE_META,
   toCsv,
@@ -138,14 +139,45 @@ function trainSection(s: NormalizedTrainStatus, fields: Set<ReportFieldId>, inpu
   </td></tr><tr><td style="height:12px"></td></tr>`;
 }
 
+/**
+ * One line per train for the email message, using only the fields the sender selected, e.g.
+ * "12627 Karnataka Express — Running, 20 min late. KSR Bengaluru → New Delhi. Last: Raichur (RC) 15:25 IST. Next: Yadgir (YG), ETA 16:48 IST."
+ */
+export function summarizeTrains(
+  statuses: readonly NormalizedTrainStatus[],
+  failures: readonly TrackResult[],
+  fields: ReadonlySet<ReportFieldId>,
+): string {
+  const lines = statuses.map((s) => {
+    const delay = fields.has('delays') && s.delayMinutes !== null ? `, ${formatDelay(s.delayMinutes)}` : '';
+    const parts = [`${s.trainNumber} ${s.trainName} — ${STATE_META[s.state].label}${delay}.`];
+    if (fields.has('sourceDestination')) parts.push(`${s.source.name} → ${s.destination.name}.`);
+    if (fields.has('currentLocation') && s.lastReportedStation) {
+      const when = s.lastReportedAt ? ` ${formatIst(s.lastReportedAt, 'time')} IST` : '';
+      parts.push(`Last: ${s.lastReportedStation.name} (${s.lastReportedStation.code})${when}.`);
+    }
+    if (fields.has('nextStation') && s.nextStation) {
+      const eta = s.nextStationEta ? `, ETA ${formatIst(s.nextStationEta, 'time')} IST` : '';
+      parts.push(`Next: ${s.nextStation.name} (${s.nextStation.code})${eta}.`);
+    }
+    if (fields.has('platform') && s.platform) parts.push(`Platform ${s.platform}.`);
+    if (fields.has('exceptions') && s.exceptions.length) parts.push(s.exceptions.map((e) => e.message).join(' '));
+    return parts.join(' ');
+  });
+  for (const f of failures) lines.push(`${f.trainNumber} — data unavailable: ${f.error?.message ?? 'no data'}`);
+  return lines.length ? `Train details (${lines.length}):\n${lines.join('\n')}` : '';
+}
+
 export function buildReport(input: BuildReportInput): BuiltReport {
   const fields = resolveReportFields(input.fields);
   const fieldSet = new Set(fields);
   const generatedAt = input.generatedAt ?? new Date();
   const anyDemo = input.statuses.some((s) => s.provider.isDemo);
-  const subject =
-    input.subject?.trim() ||
-    `${anyDemo ? '[DEMO] ' : ''}RailTrack Live report — ${input.statuses.length + input.failures.length} train${input.statuses.length + input.failures.length === 1 ? '' : 's'} (${formatIst(generatedAt, 'short')} IST)`;
+  // Demo data is always flagged in the subject, whatever subject was requested.
+  const subject = `${anyDemo ? '[DEMO] ' : ''}${input.subject?.trim() || REPORT_SUBJECT}`;
+  // Without a custom message, the message is a summary of the trains' details (alerts carry their own lines).
+  const customMessage = input.message?.trim() ?? '';
+  const messageText = customMessage || (input.alertLines?.length ? '' : summarizeTrains(input.statuses, input.failures, fieldSet));
 
   const table = buildReportTable(input.statuses, fields, { mapLink: (s) => mapLinkFor(input, s) });
   const csv = CSV_BOM + toCsv(table.headers, table.rows);
@@ -163,7 +195,7 @@ export function buildReport(input: BuildReportInput): BuiltReport {
   const demoBanner = anyDemo
     ? `<tr><td style="padding:10px 16px;border-radius:10px;background:#7c2d12;color:#ffffff;font-size:13px;font-weight:700">DEMO DATA — simulated trains, not live railway information.</td></tr><tr><td style="height:12px"></td></tr>`
     : '';
-  const message = input.message ? `<p style="margin:0 0 12px;font-size:14px;color:#0f172a;white-space:pre-wrap">${escapeHtml(input.message)}</p>` : '';
+  const message = messageText ? `<p style="margin:0 0 12px;font-size:14px;color:#0f172a;white-space:pre-wrap">${escapeHtml(messageText)}</p>` : '';
   const share = input.shareUrl
     ? `<p style="margin:0 0 12px;font-size:13px"><a href="${escapeHtml(input.shareUrl)}" style="color:#1d4ed8">View this report and map online</a> (read-only link that expires)</p>`
     : '';
@@ -184,16 +216,22 @@ ${failures}
     `Generated ${formatIst(generatedAt)} IST`,
     anyDemo ? 'DEMO DATA — simulated trains, not live railway information.' : '',
     ...(input.alertLines ?? []),
-    input.message ?? '',
+    messageText,
     input.shareUrl ? `View online: ${input.shareUrl}` : '',
     '',
-    ...input.statuses.map(
-      (s) =>
-        `${s.trainNumber} ${s.trainName} — ${STATE_META[s.state].label}, ${formatDelay(s.delayMinutes)}. ` +
-        `Last reported: ${s.lastReportedStation ? `${s.lastReportedStation.name} (${s.lastReportedStation.code})` : '—'}. ` +
-        `Next: ${s.nextStation ? s.nextStation.name : '—'}. Source: ${s.provider.name}${s.provider.isDemo ? ' (DEMO)' : ''}, updated ${formatIst(s.providerUpdatedAt ?? s.fetchedAt)} IST.`,
-    ),
-    ...input.failures.map((f) => `${f.trainNumber}: unavailable — ${f.error?.message ?? 'no data'}`),
+    // The auto-generated message already lists every train; only repeat them after a custom message or an alert.
+    ...(customMessage || !messageText
+      ? [
+          ...input.statuses.map(
+            (s) =>
+              `${s.trainNumber} ${s.trainName} — ${STATE_META[s.state].label}, ${formatDelay(s.delayMinutes)}. ` +
+              `Last reported: ${s.lastReportedStation ? `${s.lastReportedStation.name} (${s.lastReportedStation.code})` : '—'}. ` +
+              `Next: ${s.nextStation ? s.nextStation.name : '—'}.`,
+          ),
+          ...input.failures.map((f) => `${f.trainNumber}: unavailable — ${f.error?.message ?? 'no data'}`),
+        ]
+      : []),
+    ...input.statuses.map((s) => `Source for ${s.trainNumber}: ${s.provider.name}${s.provider.isDemo ? ' (DEMO DATA)' : ''}, updated ${formatIst(s.providerUpdatedAt ?? s.fetchedAt)} IST.`),
     '',
     'Estimated positions are interpolated, not GPS.',
   ]

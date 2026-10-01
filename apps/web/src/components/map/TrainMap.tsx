@@ -169,6 +169,8 @@ export default function TrainMap({
           ref={setMap}
           center={tuple(INDIA_CENTER)}
           zoom={5}
+          zoomSnap={0.25}
+          zoomDelta={0.5}
           maxZoom={tiles.maxZoom}
           scrollWheelZoom={scrollWheelZoom}
           className="h-full w-full"
@@ -526,10 +528,10 @@ function MapLegend({
       </ul>
       <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
         <span className="inline-flex items-center gap-1">
-          <TrainGlyph shape="circle" color="#334155" /> Reported position (from provider)
+          <TrainGlyph shape="circle" color="currentColor" /> Reported position (from provider)
         </span>
         <span className="inline-flex items-center gap-1">
-          <TrainGlyph shape="circle" color="#334155" dashed /> ≈ Estimated position — not GPS
+          <TrainGlyph shape="circle" color="currentColor" dashed fill="none" /> ≈ Estimated position — not GPS
         </span>
         <span>Solid line: travelled · Dashed: remaining</span>
       </p>

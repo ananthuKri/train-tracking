@@ -15,7 +15,6 @@ import {
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import { useDashboardStore } from '@/stores/dashboard';
-import { ThemeToggle } from './ThemeToggle';
 
 export const NAV_ITEMS = [
   { to: '/', label: 'Track', icon: Search, end: true },
@@ -136,7 +135,6 @@ export function Header() {
           <NavItems />
         </nav>
         <div className="ml-auto flex items-center gap-1">
-          <ThemeToggle />
           <UserMenu />
           <Button
             variant="ghost"

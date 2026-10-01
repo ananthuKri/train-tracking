@@ -109,6 +109,32 @@ describe('RailRadarProvider', () => {
     expect(s.providerUpdatedAt).toBe('2026-06-22T19:44:00.000Z');
   });
 
+  it('accepts fractional stop sequences (seen in live responses) and keeps their order', () => {
+    const data = structuredClone(fixture('railradar-live.json').data);
+    data.route[1].sequence = 1.5;
+    const s = normalizeRailRadarLive(data, '12919', '2026-06-22', new Date('2026-06-22T19:50:00Z'));
+    expect(s.stops.map((x) => x.sequence)).toEqual([1, 2, 3, 4]);
+    expect(() => NormalizedTrainStatusSchema.parse(s)).not.toThrow();
+  });
+
+  it('treats status "not-started" (as returned by the live API) as not started, not as a reported position', () => {
+    const data = structuredClone(fixture('railradar-live.json').data);
+    data.status = 'not-started';
+    data.exceptions = [];
+    data.currentLocation = { stationCode: 'INDB', sequence: 1, status: 'upcoming', segmentProgress: 0 };
+    data.nextHalt = { stationCode: 'UJN', stationName: 'Ujjain Junction', sequence: 2 };
+    for (const stop of data.route) {
+      stop.status = 'upcoming';
+      stop.actualDeparture = null;
+    }
+    const s = normalizeRailRadarLive(data, '12919', '2026-06-22', new Date('2026-06-22T17:00:00Z'));
+    expect(s.state).toBe('not_started');
+    expect(s.stateDetail).toBe('Not started');
+    expect(s.lastReportedStation).toBeNull();
+    expect(s.nextStation?.code).toBe('INDB');
+    expect(s.position).toBeNull();
+  });
+
   it('sends the bearer key and the YYYY-MM-DD date, and validates output', async () => {
     const fetchImpl = vi.fn<FetchLike>(async () => jsonResponse(200, fixture('railradar-live.json')));
     const p = new RailRadarProvider({ apiKey: 'rr_live_test', baseUrl: 'https://api.example/v1', timeoutMs: 1000, fetchImpl, sleep: noSleep });

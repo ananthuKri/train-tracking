@@ -73,9 +73,9 @@ export function StatChips({
                 active && 'border-primary bg-accent',
               )}
             >
-              <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-muted-foreground">
+              <span className="flex min-w-0 items-center gap-2 text-xs font-medium leading-tight text-muted-foreground">
                 <Icon aria-hidden className={cn('size-4 shrink-0', chip.tone)} />
-                <span className="truncate">{chip.label}</span>
+                <span>{chip.label}</span>
               </span>
               <span className="font-mono text-xl font-semibold tabular-nums">{stats[chip.id]}</span>
             </button>

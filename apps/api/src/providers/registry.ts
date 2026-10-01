@@ -34,15 +34,19 @@ export class GuardedProvider implements TrainDataProvider {
   private readonly limiter: RateLimiter;
   private healthCache: { at: number; value: ProviderHealth } | null = null;
 
+  private readonly effectiveLimits: ProviderLimits;
+
   constructor(
     private readonly inner: TrainDataProvider,
     private readonly usage: UsageSink,
+    overrides: Partial<ProviderLimits> = {},
   ) {
+    this.effectiveLimits = { ...inner.limits, ...overrides };
     this.limiter = new RateLimiter({
       name: inner.id,
-      maxConcurrent: inner.limits.maxConcurrent,
-      minIntervalMs: inner.limits.minIntervalMs,
-      maxPerMinute: inner.limits.maxPerMinute,
+      maxConcurrent: this.effectiveLimits.maxConcurrent,
+      minIntervalMs: this.effectiveLimits.minIntervalMs,
+      maxPerMinute: this.effectiveLimits.maxPerMinute,
     });
   }
 
@@ -53,7 +57,7 @@ export class GuardedProvider implements TrainDataProvider {
     return this.inner.info;
   }
   get limits(): ProviderLimits {
-    return this.inner.limits;
+    return this.effectiveLimits;
   }
   get docsUrl(): string | null {
     return this.inner.docsUrl;
@@ -150,8 +154,10 @@ export class ProviderRegistry {
     providers: TrainDataProvider[],
     private readonly activeId: ProviderId,
     usage: UsageSink,
+    /** Limit overrides applied to the active provider (e.g. a higher plan quota). */
+    activeOverrides: Partial<ProviderLimits> = {},
   ) {
-    this.providers = new Map(providers.map((p) => [p.id, new GuardedProvider(p, usage)]));
+    this.providers = new Map(providers.map((p) => [p.id, new GuardedProvider(p, usage, p.id === activeId ? activeOverrides : {})]));
     if (!this.providers.has(activeId)) throw new Error(`Unknown TRAIN_DATA_PROVIDER "${activeId}"`);
   }
 
@@ -182,5 +188,6 @@ export function createProviderRegistry(config: AppConfig, usage: UsageSink, opti
     ],
     config.TRAIN_DATA_PROVIDER,
     usage,
+    config.PROVIDER_MAX_PER_MINUTE ? { maxPerMinute: config.PROVIDER_MAX_PER_MINUTE } : {},
   );
 }

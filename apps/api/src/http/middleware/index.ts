@@ -1,5 +1,5 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
-import { ipKeyGenerator, rateLimit, type Store } from 'express-rate-limit';
+import { ipKeyGenerator, MemoryStore, rateLimit, type Options, type Store } from 'express-rate-limit';
 import { MulterError } from 'multer';
 import { RedisStore } from 'rate-limit-redis';
 import { ZodError, type z } from 'zod';
@@ -76,23 +76,78 @@ export interface RateLimitFactory {
   (name: string, options: { windowMs: number; limit: number; perUser?: boolean; message?: string }): RequestHandler;
 }
 
-/** Rate limiters share Redis when available so limits hold across API replicas. */
+/**
+ * Uses shared Redis counters while Redis is connected (limits hold across API replicas) and
+ * per-process memory counters while it is not, so a Redis outage never disables or breaks limiting.
+ */
+export class ResilientStore implements Store {
+  private shared: RedisStore | null = null;
+  private readonly memory = new MemoryStore();
+  private options: Options | null = null;
+
+  constructor(
+    private readonly redis: Redis,
+    readonly prefix: string,
+  ) {}
+
+  init(options: Options): void {
+    this.options = options;
+    this.memory.init(options);
+  }
+
+  private sharedStore(): RedisStore | null {
+    if (this.redis.status !== 'ready') return null;
+    if (!this.shared) {
+      const store = new RedisStore({
+        prefix: this.prefix,
+        sendCommand: (command: string, ...args: string[]) => this.redis.call(command, ...args) as never,
+      });
+      // The store loads its Lua scripts eagerly; a failure there is handled on first use.
+      void Promise.resolve(store.incrementScriptSha).catch(() => undefined);
+      void Promise.resolve(store.getScriptSha).catch(() => undefined);
+      if (this.options) store.init(this.options);
+      this.shared = store;
+    }
+    return this.shared;
+  }
+
+  private async run<T>(op: (store: Store) => Promise<T> | T): Promise<T> {
+    const shared = this.sharedStore();
+    if (shared) {
+      try {
+        return await op(shared);
+      } catch {
+        // Recreate the Redis store once Redis is healthy again.
+        this.shared = null;
+      }
+    }
+    return op(this.memory);
+  }
+
+  get(key: string) {
+    return this.run((s) => s.get?.(key));
+  }
+  increment(key: string) {
+    return this.run((s) => s.increment(key));
+  }
+  decrement(key: string) {
+    return this.run((s) => s.decrement(key));
+  }
+  resetKey(key: string) {
+    return this.run((s) => s.resetKey(key));
+  }
+}
+
 export function createRateLimitFactory(redis: Redis | null, disabled = false): RateLimitFactory {
   return (name, options) => {
     if (disabled) return (_req, _res, next) => next();
-    const store: Store | undefined = redis
-      ? new RedisStore({
-          prefix: `railtrack:rl:${name}:`,
-          sendCommand: (command: string, ...args: string[]) => redis.call(command, ...args) as never,
-        })
-      : undefined;
+    const store: Store | undefined = redis ? new ResilientStore(redis, `railtrack:rl:${name}:`) : undefined;
     return rateLimit({
       windowMs: options.windowMs,
       limit: options.limit,
       standardHeaders: 'draft-8',
       legacyHeaders: false,
       store,
-      // If Redis is unreachable, let requests through rather than failing every call.
       passOnStoreError: true,
       keyGenerator: (req) => (options.perUser && req.session ? `u:${req.session.userId}` : ipKeyGenerator(req.ip ?? 'unknown')),
       handler: (_req, res, _next, used) => {

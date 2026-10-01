@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as XLSX from 'xlsx';
 import { istWallClockToUtc, todayInIst, type AlertRules, type NormalizedTrainStatus } from '@railtrack/shared';
-import { MemoryCache } from '../../src/lib/cache.ts';
+import { MemoryCache, SafeCache } from '../../src/lib/cache.ts';
 import { hashPassword, verifyPassword } from '../../src/lib/crypto.ts';
 import { ProviderError } from '../../src/lib/errors.ts';
 import { backoffDelay, DEFAULT_RETRY_POLICY, parseRetryAfter, withRetry } from '../../src/lib/http.ts';
@@ -235,6 +235,18 @@ describe('report builder', () => {
     expect(header).toBe('Train Number,Train Name,Journey Date,Status,Delay (min)');
   });
 
+  it('defaults the subject to "Status Tracker" and the message to the trains\' details', async () => {
+    const s = await demoStatus('12627', '12:00');
+    const report = buildReport({ statuses: [s], failures: [], fields: ['identity', 'delays', 'nextStation'], appBaseUrl: 'http://app' });
+    expect(report.subject).toBe('[DEMO] Status Tracker');
+    expect(report.text).toContain('Train details (1):');
+    expect(report.text).toContain(`12627 Karnataka Express — ${s.state === 'departed' ? 'Departed' : 'Running'}`);
+    expect(report.text).toContain(`Next: ${s.nextStation!.name}`);
+    // Only selected fields appear in the summary.
+    expect(report.text).not.toContain('Last:');
+    expect(report.html).toContain('Train details (1):');
+  });
+
   it('neutralises spreadsheet formulas in CSV cells', async () => {
     const s = await demoStatus('12082', '09:00');
     const report = buildReport({ statuses: [{ ...s, trainName: '=HYPERLINK("http://evil")' }], failures: [], fields: ['identity'], appBaseUrl: 'http://app' });
@@ -293,6 +305,30 @@ describe('upload parsing', () => {
     expect(() => detectFileType('x.xlsx', Buffer.from('train_number\n12082'))).toThrow(/not a valid Excel/);
     expect(() => detectFileType('x.exe', Buffer.from('MZ'))).toThrow(/\.csv, \.xlsx or \.xls/);
     expect(() => buildUploadPreview('x.csv', Buffer.from('foo,bar\n1,2\n'), today)).toThrow(/No train number column/);
+  });
+});
+
+describe('SafeCache', () => {
+  it('falls back to an in-process cache when Redis fails, without throwing', async () => {
+    const broken = {
+      kind: 'redis' as const,
+      get: async () => {
+        throw new Error('down');
+      },
+      set: async () => {
+        throw new Error('down');
+      },
+      del: async () => {
+        throw new Error('down');
+      },
+    };
+    const errors: string[] = [];
+    const cache = new SafeCache(broken, (_e, op) => errors.push(op));
+    await cache.set('k', { v: 1 }, 60);
+    expect(await cache.get('k')).toEqual({ v: 1 });
+    await cache.del('k');
+    expect(await cache.get('k')).toBeNull();
+    expect(errors).toEqual(['set', 'get', 'del', 'get']);
   });
 });
 

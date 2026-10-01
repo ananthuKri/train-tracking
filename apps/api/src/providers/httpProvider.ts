@@ -139,15 +139,17 @@ export function stopStatusFromText(value: unknown): StopStatus {
 
 /** Map free-text journey status to the normalised state (null when the text is inconclusive). */
 export function stateFromText(value: unknown): TrainState | null {
-  const t = String(value ?? '').toLowerCase();
+  // Providers mix "not-started", "not_started" and "Not Started"; compare on a spaced form.
+  const t = String(value ?? '')
+    .toLowerCase()
+    .replace(/[-_]+/g, ' ')
+    .trim();
   if (!t) return null;
   if (t.includes('cancel')) return 'cancelled';
   if (t.includes('resched')) return 'rescheduled';
   if (t.includes('divert')) return 'diverted';
-  if (t.includes('yet to start') || t.includes('not started') || t.includes('not_started') || t.includes('yet_to_start') || t === 'scheduled') {
-    return 'not_started';
-  }
-  if (t.includes('reached destination') || t.includes('completed') || t.includes('terminated') || t.includes('arrived at destination') || t === 'arrived' || t === 'completed') {
+  if (t.includes('yet to start') || t.includes('not started') || t === 'scheduled' || t === 'upcoming') return 'not_started';
+  if (t.includes('reached destination') || t.includes('completed') || t.includes('terminated') || t.includes('arrived at destination') || t === 'arrived') {
     return 'arrived';
   }
   if (t.includes('depart')) return 'departed';

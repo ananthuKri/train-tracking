@@ -49,6 +49,8 @@ const EnvSchema = z.object({
   INDIAN_RAIL_API_BASE_URL: z.string().url().default('https://indianrailapi.com/api/v2'),
   MOCK_FAILURE_RATE: z.coerce.number().min(0).max(1).default(0),
   PROVIDER_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+  /** Override the active provider's per-minute request cap (match your plan's burst limit). */
+  PROVIDER_MAX_PER_MINUTE: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1).max(1000).optional()),
 
   MAPBOX_TOKEN: optionalString,
 

@@ -23,8 +23,9 @@ export default defineConfig({
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: [
     {
-      command: 'npm run dev -w @railtrack/api',
-      url: 'http://localhost:8000/api/health',
+      // Tests don't need file watching.
+      command: 'npm run serve -w @railtrack/api',
+      url: 'http://127.0.0.1:8000/api/health',
       cwd: repoRoot,
       reuseExistingServer: true,
       timeout: 120_000,
@@ -34,7 +35,7 @@ export default defineConfig({
     },
     {
       command: 'npm run dev -w @railtrack/web',
-      url: 'http://localhost:5173',
+      url: 'http://127.0.0.1:5173',
       cwd: repoRoot,
       reuseExistingServer: true,
       timeout: 120_000,

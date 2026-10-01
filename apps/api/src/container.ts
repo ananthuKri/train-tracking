@@ -41,21 +41,41 @@ export interface DepOverrides {
   now?: () => Date;
 }
 
+/** Log a recurring infrastructure warning at most once per interval per key. */
+function throttledWarn(logger: Logger, intervalMs = 60_000) {
+  const last = new Map<string, number>();
+  return (key: string, details: Record<string, unknown>, message: string) => {
+    const now = Date.now();
+    if (now - (last.get(key) ?? 0) < intervalMs) return;
+    last.set(key, now);
+    logger.warn(details, message);
+  };
+}
+
+function describeError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  return err.message || (err as NodeJS.ErrnoException).code || err.name;
+}
+
 export function createDeps(config: AppConfig, overrides: DepOverrides = {}): AppDeps {
   const logger =
     overrides.logger ??
     createLogger({ level: config.LOG_LEVEL ?? (config.isTest ? 'silent' : 'info'), pretty: !config.isProduction && !config.isTest });
 
   const db = overrides.db !== undefined ? overrides.db : config.DATABASE_URL ? createPrisma(config.DATABASE_URL) : null;
+  const warnOnce = throttledWarn(logger);
   const redis =
     overrides.redis !== undefined
       ? overrides.redis
       : config.REDIS_URL
-        ? createRedis(config.REDIS_URL, (err) => logger.warn({ errMessage: err.message }, 'redis connection error'))
+        ? createRedis(config.REDIS_URL, (err) => warnOnce('redis', { reason: describeError(err) }, 'Redis unreachable — using in-memory fallbacks'))
         : null;
 
   const cache =
-    overrides.cache ?? new SafeCache(redis ? new RedisCache(redis) : new MemoryCache(), (err, op) => logger.warn({ err, op }, 'cache operation failed'));
+    overrides.cache ??
+    new SafeCache(redis ? new RedisCache(redis) : new MemoryCache(), (err, op) =>
+      warnOnce('cache', { op, reason: describeError(err) }, 'cache unavailable — continuing without it'),
+    );
 
   const usage: UsageSink = (record) => {
     logger.debug({ provider: record.provider, operation: record.operation, outcome: record.outcome, latencyMs: record.latencyMs }, 'provider call');
@@ -78,7 +98,7 @@ export function createDeps(config: AppConfig, overrides: DepOverrides = {}): App
   const providers = createProviderRegistry(config, usage, { fetchImpl: overrides.fetchImpl, now: overrides.now });
   const tracking = new TrackingService({ providers, cache, db, logger, now: overrides.now });
   const mailer = overrides.mailer ?? createMailer(config);
-  const scheduler = overrides.scheduler !== undefined ? overrides.scheduler : redis ? new BullMonitoringScheduler(redis) : null;
+  const scheduler = overrides.scheduler !== undefined ? overrides.scheduler : redis ? new BullMonitoringScheduler(redis, (err) => warnOnce('queue', { reason: describeError(err) }, 'monitoring queue unavailable')) : null;
   const audit = new AuditService(db, config.sessionSecret, logger);
   const auth = new AuthService({ db, config, audit });
   const reports = new EmailReportService({ db, tracking, mailer, config, logger, audit });

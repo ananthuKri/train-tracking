@@ -190,7 +190,8 @@ export class EmailReportService {
       fields,
       appBaseUrl: this.deps.config.APP_BASE_URL,
       alertLines: input.alertLines,
-      subject: `${input.status.provider.isDemo ? '[DEMO] ' : ''}Alert: ${input.status.trainNumber} ${input.alertLines[0] ?? 'update'}`,
+      // buildReport adds the [DEMO] prefix for simulated data.
+      subject: `Alert: ${input.status.trainNumber} ${input.alertLines[0] ?? 'update'}`,
     });
     const report = await db.emailReport.create({
       data: {

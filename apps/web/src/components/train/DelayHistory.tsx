@@ -123,8 +123,14 @@ export function DelayHistory({
     return <p className="text-sm text-muted-foreground">No verified fetches recorded for this journey yet.</p>;
   }
   const rows = expanded ? items : items.slice(0, 8);
+  const allDemo = items.every((s) => s.isDemo);
   return (
     <div data-testid="delay-history" className="space-y-3">
+      {allDemo && (
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          <DemoBadge /> Simulated history
+        </p>
+      )}
       <DelaySparkline items={items} />
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
@@ -141,7 +147,7 @@ export function DelayHistory({
             {rows.map((s) => (
               <tr key={s.id} className="border-b last:border-0">
                 <td className="py-1.5 pr-2 font-mono tabular-nums">
-                  {ist(s.fetchedAt)} {s.isDemo && <DemoBadge className="ml-1 align-middle" />}
+                  {ist(s.fetchedAt)} {s.isDemo && !allDemo && <DemoBadge className="ml-1 align-middle" />}
                 </td>
                 <td className="py-1.5 pr-2">{STATE_META[s.state].label}</td>
                 <td className="py-1.5 pr-2 font-mono tabular-nums">{formatDelay(s.delayMinutes)}</td>

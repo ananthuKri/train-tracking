@@ -175,13 +175,16 @@ export type ReportTrainRef = z.infer<typeof ReportTrainRefSchema>;
 
 export const EmailReportRequestSchema = z
   .object({
-    recipients: z.array(emailSchema).min(1, 'Add at least one recipient').max(20),
+    /** Omit to send the report to the signed-in user's own email address (what the web app does). */
+    recipients: z.array(emailSchema).min(1, 'Add at least one recipient').max(20).optional(),
     /** Omit (or send every field) for the default "full report". */
     fields: z.array(ReportFieldSchema).min(1).optional(),
     trains: z.array(ReportTrainRefSchema).min(1).max(MAX_TRAINS_PER_REQUEST),
     /** A public, expiring, read-only link is only created when this is explicitly true. */
     includeShareLink: z.boolean().default(false),
+    /** Defaults to REPORT_SUBJECT ("Status Tracker"). */
     subject: z.string().trim().max(150).optional(),
+    /** Defaults to a summary of the selected trains' details. */
     message: z.string().trim().max(1000).optional(),
   })
   .meta({ id: 'EmailReportRequest' });

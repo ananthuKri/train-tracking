@@ -48,8 +48,10 @@ describe('SourceFreshness', () => {
     expect(bar).toHaveTextContent('Source: Demo simulator');
     expect(bar).toHaveTextContent(`Provider updated ${formatIst(status.providerUpdatedAt, 'short')} IST`);
     expect(bar).toHaveTextContent(`Fetched ${formatIst(status.fetchedAt, 'short')} IST`);
+    // freshnessLabel() is "DEMO DATA" for demo providers — shown once, as the demo badge.
+    expect(within(bar).getAllByText(/demo data/i)).toHaveLength(1);
     expect(within(bar).getByTestId('demo-badge')).toBeInTheDocument();
-    expect(within(bar).getByTestId('freshness')).toHaveTextContent('DEMO DATA');
+    expect(within(bar).queryByTestId('freshness')).not.toBeInTheDocument();
     expect(screen.queryByTestId('stale-notice')).not.toBeInTheDocument();
   });
 

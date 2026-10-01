@@ -136,7 +136,7 @@ export function normalizeIndianRailLive(body: Json, trainNumber: string, journey
     const actDep = actualInstants[i * 2 + 1] ?? null;
     const reached = passed || isCurrent;
     return {
-      sequence: (toNumberOrNull(r.SerialNo) ?? i) + 1,
+      sequence: i + 1,
       stationCode: code,
       stationName: titleCase(str(r.StationName) ?? stationRef(code).name),
       lat: null,
@@ -213,7 +213,7 @@ export function normalizeIndianRailRoute(body: Json, trainNumber: string, now: D
     const arrival = parse12h(r.ArrivalTime);
     const departure = parse12h(r.DepartureTime);
     return {
-      sequence: (toNumberOrNull(r.SerialNo) ?? i + 1),
+      sequence: i + 1,
       stationCode: code,
       stationName: titleCase(str(r.StationName) ?? stationRef(code).name),
       lat: null,

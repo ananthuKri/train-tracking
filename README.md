@@ -144,6 +144,7 @@ repository root (and optionally `apps/api/.env`). Only `.env.example` is committ
 | `ADMIN_EMAILS` | Accounts that get the admin role on sign-up (provider usage page) |
 | `MAPBOX_TOKEN` | Optional *public* (`pk.`) Mapbox token; otherwise OpenStreetMap tiles |
 | `TRUST_PROXY` | Number of proxies in front of the API (correct client IPs for rate limiting) |
+| `PROVIDER_MAX_PER_MINUTE` | Requests/minute to the active provider (default is free-tier safe: RailRadar 10); set to your plan's burst limit |
 
 There is deliberately **no silent fallback to demo data**: if the selected provider has no key, requests
 return `PROVIDER_NOT_CONFIGURED` ("Live data temporarily unavailable") and the provider page shows

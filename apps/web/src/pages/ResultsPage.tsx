@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -98,9 +98,24 @@ export default function ResultsPage() {
     [results],
   );
 
-  const update = (patch: Partial<TrainFilters>, nextSort: SortKey = sort) =>
-    setSearchParams(writeFilterParams({ ...filters, ...patch }, nextSort), { replace: true });
-  const replaceFilters = (next: TrainFilters) => setSearchParams(writeFilterParams({ q: filters.q, ...next }, sort), { replace: true });
+  // URL updates commit asynchronously; build each change on the latest requested params so quick
+  // successive edits (e.g. sort, then a filter) don't overwrite each other with stale values.
+  const latestParams = useRef(searchParams);
+  useEffect(() => {
+    latestParams.current = searchParams;
+  }, [searchParams]);
+  const commitParams = (next: URLSearchParams) => {
+    latestParams.current = next;
+    setSearchParams(next, { replace: true });
+  };
+  const update = (patch: Partial<TrainFilters>, nextSort?: SortKey) => {
+    const current = parseFilterParams(latestParams.current);
+    commitParams(writeFilterParams({ ...current.filters, ...patch }, nextSort ?? current.sort));
+  };
+  const replaceFilters = (next: TrainFilters) => {
+    const current = parseFilterParams(latestParams.current);
+    commitParams(writeFilterParams({ q: current.filters.q, ...next }, current.sort));
+  };
 
   const selected = useMemo(() => results.filter((r) => selectedKeys.includes(resultKey(r))), [results, selectedKeys]);
   const scope = selected.length ? selected : filtered;

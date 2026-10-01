@@ -32,7 +32,9 @@ export function reportsRouter(deps: AppDeps, limit: RateLimitFactory): Router {
     asyncHandler(async (req, res) => {
       const body = parseBody(EmailReportRequestSchema, req.body);
       body.trains.forEach((t) => resolveJourneyDate(t.journeyDate));
-      const result = await deps.reports.send(req.user!.id, body.recipients, body, clientIp(req));
+      // Without explicit recipients the report goes to the signed-in user (what the web app does).
+      const recipients = body.recipients?.length ? body.recipients : [req.user!.email];
+      const result = await deps.reports.send(req.user!.id, recipients, body, clientIp(req));
       res.status(201).json(result);
     }),
   );

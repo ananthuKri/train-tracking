@@ -18,11 +18,14 @@ export default defineConfig({
     alias: { '@': path.resolve(root, 'src') },
   },
   server: {
+    // Explicit IPv4 loopback: on Windows 'localhost' can bind IPv6 only, which breaks tools probing 127.0.0.1.
+    host: '127.0.0.1',
     port: 5173,
     strictPort: true,
     proxy,
   },
   preview: {
+    host: '127.0.0.1',
     port: 4173,
     proxy,
   },

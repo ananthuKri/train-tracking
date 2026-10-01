@@ -1,15 +1,11 @@
 import { Outlet, ScrollRestoration } from 'react-router';
 import { Toaster } from 'sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { useThemeStore } from '@/stores/theme';
 import { DemoBanner } from './DemoBanner';
 import { Footer } from './Footer';
 import { Header } from './Header';
-import { useApplyTheme } from './ThemeToggle';
 
 export function AppLayout() {
-  useApplyTheme();
-  const theme = useThemeStore((s) => s.theme);
   return (
     <TooltipProvider>
       <div className="flex min-h-dvh flex-col">
@@ -26,7 +22,7 @@ export function AppLayout() {
         </main>
         <Footer />
       </div>
-      <Toaster theme={theme} richColors closeButton position="top-right" />
+      <Toaster theme="light" richColors closeButton position="top-right" />
       <ScrollRestoration />
     </TooltipProvider>
   );

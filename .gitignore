@@ -13,3 +13,4 @@ apps/web/playwright-report/
 apps/web/blob-report/
 .vite/
 *.tsbuildinfo
+.tmp-*

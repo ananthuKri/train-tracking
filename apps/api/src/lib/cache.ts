@@ -62,11 +62,15 @@ export class MemoryCache implements Cache {
   }
 }
 
-/** A cache read/write failure must never break a request; log and continue without the cache. */
+/**
+ * A cache failure must never break a request. Errors are reported and the call is served by an
+ * in-process fallback cache, so provider quotas stay protected while Redis is unavailable.
+ */
 export class SafeCache implements Cache {
   constructor(
     private readonly inner: Cache,
     private readonly onError: (err: unknown, op: string) => void,
+    private readonly fallback: Cache = new MemoryCache(1_000),
   ) {}
 
   get kind() {
@@ -78,7 +82,7 @@ export class SafeCache implements Cache {
       return await this.inner.get<T>(key);
     } catch (err) {
       this.onError(err, 'get');
-      return null;
+      return this.fallback.get<T>(key);
     }
   }
 
@@ -87,6 +91,7 @@ export class SafeCache implements Cache {
       await this.inner.set(key, value, ttlSeconds);
     } catch (err) {
       this.onError(err, 'set');
+      await this.fallback.set(key, value, ttlSeconds);
     }
   }
 
@@ -96,5 +101,6 @@ export class SafeCache implements Cache {
     } catch (err) {
       this.onError(err, 'del');
     }
+    await this.fallback.del(key);
   }
 }

@@ -41,7 +41,11 @@ test.describe('Results dashboard', () => {
     await page.getByTestId('filter-toggle').click();
     await page.getByTestId('filter-min-delay').fill('0');
 
-    const href = await page.getByTestId('export-csv').getAttribute('href');
+    // The link updates after the URL state commits; wait for it rather than reading it once.
+    const exportLink = page.getByTestId('export-csv');
+    await expect(exportLink).toHaveAttribute('href', /sort=train_number/);
+    await expect(exportLink).toHaveAttribute('href', /minDelay=0/);
+    const href = await exportLink.getAttribute('href');
     expect(href).toBeTruthy();
     const url = new URL(href!, 'http://localhost:5173');
     expect(url.pathname).toBe('/api/tracking/export.csv');

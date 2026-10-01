@@ -19,6 +19,9 @@ export const REPORT_FIELD_IDS = [
 ] as const;
 export type ReportFieldId = (typeof REPORT_FIELD_IDS)[number];
 
+/** Subject used for every report email unless an API client sets its own. */
+export const REPORT_SUBJECT = 'Status Tracker';
+
 export const REPORT_FIELDS: readonly { id: ReportFieldId; label: string; description: string }[] = [
   { id: 'identity', label: 'Train identity', description: 'Number, name, journey date and status' },
   { id: 'sourceDestination', label: 'Source / destination', description: 'Origin and terminating stations' },
