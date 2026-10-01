@@ -129,6 +129,25 @@ describe('TrackingService', () => {
     expect(provider.calls).toBe(1);
   });
 
+  it('reuses a recent verified result when the caller accepts it (reports right after tracking)', async () => {
+    const provider = flakyProvider();
+    // Same clock as the demo provider's fixed 09:00 timestamps, five minutes later.
+    const tracking = new TrackingService({
+      providers: new ProviderRegistry([provider], provider.id, () => {}),
+      cache: new MemoryCache(),
+      db: null,
+      logger: createLogger({ level: 'silent' }),
+      now: () => at('09:05'),
+    });
+    await tracking.getLiveStatus('12082', DATE);
+    await new Promise((r) => setTimeout(r, 80)); // the short live cache has expired
+    const reused = await tracking.getLiveStatus('12082', DATE, { maxAgeSeconds: 900 });
+    expect(reused.status?.freshness).toBe('cached');
+    expect(provider.calls).toBe(1);
+    await tracking.getLiveStatus('12082', DATE);
+    expect(provider.calls).toBe(2);
+  });
+
   it('coalesces concurrent requests for the same train', async () => {
     const provider = flakyProvider();
     const { tracking } = setup(provider);

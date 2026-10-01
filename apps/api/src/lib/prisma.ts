@@ -6,7 +6,15 @@ export type Db = PrismaClient;
 export { Prisma } from '../generated/prisma/client.ts';
 
 export function createPrisma(databaseUrl: string): Db {
-  return new PrismaClient({ adapter: new PrismaPg({ connectionString: databaseUrl, max: 10 }) });
+  return new PrismaClient({
+    adapter: new PrismaPg({
+      connectionString: databaseUrl,
+      max: 10,
+      // The adapter sends timestamps without a zone, which PostgreSQL reads in the session time zone.
+      // Pin sessions to UTC so instants are stored correctly even when the server runs in e.g. Asia/Calcutta.
+      options: '-c TimeZone=UTC',
+    }),
+  });
 }
 
 /** Throw a clean 503 when a feature needs the database but none is configured. */

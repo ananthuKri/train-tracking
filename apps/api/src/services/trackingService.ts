@@ -24,6 +24,13 @@ export interface TrackItem {
   journeyDate: string;
 }
 
+export interface LiveStatusOptions {
+  forceRefresh?: boolean;
+  trackingRequestId?: string | null;
+  /** Accept a verified result up to this old (seconds) before fetching again. */
+  maxAgeSeconds?: number;
+}
+
 export interface TrackManyOptions {
   forceRefresh?: boolean;
   userId?: string | null;
@@ -53,15 +60,23 @@ export class TrackingService {
   }
 
   /** Live status for one train with short caching, request coalescing and last-verified fallback. */
-  async getLiveStatus(trainNumber: string, journeyDate: string, options: { forceRefresh?: boolean; trackingRequestId?: string | null } = {}): Promise<TrackResult> {
+  async getLiveStatus(trainNumber: string, journeyDate: string, options: LiveStatusOptions = {}): Promise<TrackResult> {
     const provider = this.provider;
     const key = `live:${provider.id}:${trainNumber}:${journeyDate}`;
+    const ageOf = (s: NormalizedTrainStatus) => (this.now().getTime() - new Date(s.fetchedAt).getTime()) / 1000;
 
     const cached = await this.deps.cache.get<NormalizedTrainStatus>(key);
     // A forced refresh still reuses a result younger than MIN_FORCE_REFRESH_SECONDS to protect provider quotas.
-    const ageSeconds = cached ? (this.now().getTime() - new Date(cached.fetchedAt).getTime()) / 1000 : Infinity;
+    const ageSeconds = cached ? ageOf(cached) : Infinity;
     if (cached && (!options.forceRefresh || ageSeconds < MIN_FORCE_REFRESH_SECONDS)) {
       return { trainNumber, journeyDate, ok: true, status: { ...cached, freshness: 'cached' }, error: null };
+    }
+    // Callers such as email reports accept a slightly older verified result instead of fetching again.
+    if (options.maxAgeSeconds && !options.forceRefresh) {
+      const recent = await this.deps.cache.get<NormalizedTrainStatus>(lastGoodKey(provider.id, trainNumber, journeyDate));
+      if (recent && ageOf(recent) <= options.maxAgeSeconds) {
+        return { trainNumber, journeyDate, ok: true, status: { ...recent, freshness: 'cached' }, error: null };
+      }
     }
 
     const existing = this.inflight.get(key);
@@ -120,7 +135,7 @@ export class TrackingService {
   }
 
   /** Fetch several trains with bounded concurrency; results keep input order. */
-  async fetchMany(items: TrackItem[], options: { forceRefresh?: boolean; trackingRequestId?: string | null } = {}): Promise<TrackResult[]> {
+  async fetchMany(items: TrackItem[], options: LiveStatusOptions = {}): Promise<TrackResult[]> {
     const concurrency = Math.max(1, this.provider.limits.maxConcurrent * 2);
     const results: TrackResult[] = new Array(items.length);
     let cursor = 0;

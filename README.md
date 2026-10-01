@@ -222,6 +222,13 @@ responsive HTML body and a CSV attachment of the selected fields. Every send is 
 created only when the sender ticks "Include a share link"; the token is random, stored only as an HMAC,
 expires after `SHARE_LINK_TTL_DAYS`, and exposes only the fields that were selected.
 
+**Automatic email after tracking.** When a signed-in user tracks trains (typed numbers or an upload), the
+report is emailed to that user's own address as soon as every train has been fetched — one email with the
+"Status Tracker" subject, the train details and the CSV (uploads of more than 50 trains are split into
+several emails). The Track page has an "Email the results to …" checkbox, ticked by default. Dashboard
+refreshes never send email, reports reuse results fetched in the last 15 minutes instead of scraping again,
+and the normal limit of 10 report emails per user per hour applies.
+
 ## Monitoring worker
 
 Monitoring runs on the server, so it continues after the browser is closed:

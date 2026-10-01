@@ -29,11 +29,13 @@ import {
   type TrackingHistoryItem,
 } from '@railtrack/shared';
 import { isApiError } from '@/api/client';
-import { queryKeys, useMe, useTrack, useTrackingHistory } from '@/api/hooks';
+import { emailTrackedResults } from '@/api/autoEmail';
+import { queryKeys, useConfig, useMe, useTrack, useTrackingHistory } from '@/api/hooks';
 import { trackItemsInBatches } from '@/api/track';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -83,6 +85,15 @@ export default function TrackPage() {
   const dateCheck = checkJourneyDate(date);
   const track = useTrack();
 
+  const { data: config } = useConfig();
+  const canEmail = Boolean(user) && config?.features.email !== false;
+  const [emailMe, setEmailMe] = useState(true);
+  /** Once every train has been fetched, email the results to the signed-in user (if they asked for it). */
+  const emailWhenDone = (response: TrackResponse) => {
+    if (!canEmail || !emailMe) return;
+    void emailTrackedResults(response).then(() => queryClient.invalidateQueries({ queryKey: ['reports'] }));
+  };
+
   const [batch, setBatch] = useState<{ running: boolean; progress: string | null; error: unknown }>({
     running: false,
     progress: null,
@@ -101,6 +112,7 @@ export default function TrackPage() {
         onSuccess: (response) => {
           setTracked({ response, source: 'manual' });
           summaryToast(response);
+          emailWhenDone(response);
           navigate('/results');
         },
       },
@@ -121,6 +133,8 @@ export default function TrackPage() {
           description: `${partialError.message} The remaining ${untracked.length} were not requested.`,
         });
       } else summaryToast(response);
+      // All batches are done: email everything that was fetched in one go.
+      emailWhenDone(response);
       setBatch({ running: false, progress: null, error: null });
       navigate('/results');
     } catch (error) {
@@ -243,6 +257,29 @@ export default function TrackPage() {
             />
           </TabsContent>
         </Tabs>
+
+        <div className="border-t px-5 py-3 text-sm" data-testid="auto-email">
+          {canEmail ? (
+            <div className="flex items-start gap-2">
+              <Checkbox id="email-me" checked={emailMe} onCheckedChange={(v) => setEmailMe(v === true)} data-testid="auto-email-checkbox" />
+              <Label htmlFor="email-me" className="flex flex-col items-start gap-0.5 font-normal">
+                <span>
+                  Email the results to <span className="font-medium">{user!.email}</span> when tracking finishes
+                </span>
+                <span className="text-xs text-muted-foreground">Subject “Status Tracker”, with the train details and a CSV attachment.</span>
+              </Label>
+            </div>
+          ) : !user ? (
+            <p className="text-muted-foreground">
+              <Link to="/login?next=%2F" className="font-medium text-primary underline-offset-4 hover:underline">
+                Sign in
+              </Link>{' '}
+              to get the results emailed to you automatically.
+            </p>
+          ) : (
+            <p className="text-muted-foreground">Email delivery is not configured on this server.</p>
+          )}
+        </div>
 
         <div aria-live="assertive" className="empty:hidden px-5 pb-5">
           {trackError && (

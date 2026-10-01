@@ -1,6 +1,7 @@
 import { useConfig } from '@/api/hooks';
 
-export const DATA_DISCLAIMER = 'Data from licensed providers via RailTrack Live. Estimated positions are interpolated, not GPS.';
+export const DATA_DISCLAIMER =
+  'Data from public train-status websites and licensed APIs; each result names its source. Unofficial — estimated positions are interpolated, not GPS.';
 
 export function Footer() {
   const { data: config } = useConfig();

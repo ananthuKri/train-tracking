@@ -63,6 +63,9 @@ export function redactStatus(status: NormalizedTrainStatus, fields: readonly Rep
   return s;
 }
 
+/** Results this recent are reused for reports (each train shows its own fetched time). */
+const REPORT_MAX_AGE_SECONDS = 15 * 60;
+
 type ReportRow = Prisma.EmailReportGetPayload<{ include: { recipients: true } }>;
 
 export class EmailReportService {
@@ -78,7 +81,8 @@ export class EmailReportService {
   ) {}
 
   private async collect(trains: ReportTrainRef[]) {
-    const results = await this.deps.tracking.fetchMany(trains);
+    // Reports usually follow a tracking request; reuse results from the last 15 minutes instead of scraping again.
+    const results = await this.deps.tracking.fetchMany(trains, { maxAgeSeconds: REPORT_MAX_AGE_SECONDS });
     return {
       statuses: results.filter((r) => r.ok && r.status).map((r) => r.status!),
       failures: results.filter((r) => !r.ok),

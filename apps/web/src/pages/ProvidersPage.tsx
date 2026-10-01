@@ -37,7 +37,7 @@ export default function ProvidersPage() {
     <div className="space-y-8">
       <PageHeader
         title="Provider health"
-        description="Live train data comes from licensed providers. This page shows which provider is active and whether each one is reachable."
+        description="Live train data comes from public websites (scraped first) and licensed APIs (last resort). This page shows which sources are active and whether each one is reachable."
         actions={
           <Button variant="outline" onClick={() => void health.refetch()} disabled={health.isFetching} data-testid="refresh-health">
             <RefreshCw aria-hidden className={cn(health.isFetching && 'animate-spin')} />
