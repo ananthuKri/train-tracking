@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+.git
+.env
+.env.*
+!.env.example
+apps/api/src/generated
+apps/api/.mail-outbox
+apps/web/test-results
+apps/web/playwright-report
+coverage
+.tmp-*

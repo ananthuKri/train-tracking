@@ -1,0 +1,13 @@
+{
+  "ResponseCode": "200",
+  "StartDate": "15-09-2026",
+  "TrainNumber": "12565",
+  "CurrentPosition": "Departed from Jagatbela",
+  "CurrentStation": { "SerialNo": "1", "StationName": "Jagatbela", "StationCode": "JTB", "Distance": "-", "IsDeparted": "Yes", "Day": "0", "ScheduleArrival": "04:27PM", "ActualArrival": "04:41PM", "DelayInArrival": "14 M", "ScheduleDeparture": "04:29PM", "ActualDeparture": "04:43PM", "DelayInDeparture": "14 M" },
+  "TrainRoute": [
+    { "SerialNo": "0", "StationName": "Darbhanga", "StationCode": "DBG", "Distance": "0", "IsDeparted": "Yes", "Day": "0", "ScheduleArrival": "Source", "ActualArrival": "Source", "DelayInArrival": "-", "ScheduleDeparture": "08:25AM", "ActualDeparture": "08:25AM", "DelayInDeparture": "00 M" },
+    { "SerialNo": "1", "StationName": "Jagatbela", "StationCode": "JTB", "Distance": "-", "IsDeparted": "Yes", "Day": "0", "ScheduleArrival": "04:27PM", "ActualArrival": "04:41PM", "DelayInArrival": "14 M", "ScheduleDeparture": "04:29PM", "ActualDeparture": "04:43PM", "DelayInDeparture": "14 M" },
+    { "SerialNo": "2", "StationName": "New Delhi", "StationCode": "NDLS", "Distance": "1150", "IsDeparted": "-", "Day": "0", "ScheduleArrival": "05:30AM", "ActualArrival": "05:45AM", "DelayInArrival": "15 M", "ScheduleDeparture": "Destination", "ActualDeparture": "Destination", "DelayInDeparture": "-" }
+  ],
+  "Message": "SUCCESS"
+}

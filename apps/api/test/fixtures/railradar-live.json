@@ -1,0 +1,50 @@
+{
+  "success": true,
+  "data": {
+    "trainNumber": "12919",
+    "trainName": "Malwa SF Express",
+    "startDate": "2026-06-22",
+    "lastUpdatedAt": "2026-06-23T01:14:00+05:30",
+    "status": "running",
+    "delayMinutes": 12,
+    "train": {
+      "number": "12919",
+      "name": "Malwa SF Express",
+      "type": "Superfast Express",
+      "source": { "code": "INDB", "name": "Indore Junction" },
+      "destination": { "code": "SVDK", "name": "Shri Mata Vaishno Devi Katra" },
+      "runDays": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+      "distance": 1640
+    },
+    "currentLocation": {
+      "stationCode": "UJN",
+      "sequence": 2,
+      "status": "departed",
+      "isHalt": true,
+      "isDiverted": false,
+      "isActualPosition": true,
+      "segmentProgress": 0.45,
+      "speedKmh": 65.5,
+      "bearingDegrees": 40
+    },
+    "previousHalt": { "stationCode": "INDB", "stationName": "Indore Junction", "sequence": 1, "distance": 0 },
+    "nextHalt": { "stationCode": "MKSM", "stationName": "Maksi", "sequence": 3, "distance": 96 },
+    "exceptions": [
+      {
+        "type": "DIVERTED",
+        "message": "Train is diverted between UJN (Ujjain Junction) and MKSM (Maksi)",
+        "diverted": { "skippedStations": [{ "stationCode": "TJP" }], "distanceKm": 41 },
+        "partiallyCancelled": null,
+        "rescheduled": null
+      }
+    ],
+    "route": [
+      { "sequence": 1, "stationCode": "INDB", "stationName": "Indore Junction", "isHalt": true, "lat": 22.72, "lng": 75.86, "scheduledArrival": null, "scheduledDeparture": "2026-06-22T23:55:00+05:30", "actualArrival": null, "actualDeparture": "2026-06-23T00:07:00+05:30", "delayArrival": null, "delayDeparture": 12, "status": "departed", "distance": 0, "platform": "4" },
+      { "sequence": 2, "stationCode": "UJN", "stationName": "Ujjain Junction", "isHalt": true, "lat": 23.18, "lng": 75.78, "scheduledArrival": "2026-06-23T00:55:00+05:30", "scheduledDeparture": "2026-06-23T01:00:00+05:30", "actualArrival": "2026-06-23T01:07:00+05:30", "actualDeparture": "2026-06-23T01:12:00+05:30", "delayArrival": 12, "delayDeparture": 12, "status": "departed", "distance": 55, "platform": "1" },
+      { "sequence": 3, "stationCode": "MKSM", "stationName": "Maksi", "isHalt": true, "lat": 23.26, "lng": 76.15, "scheduledArrival": "2026-06-23T02:10:00+05:30", "scheduledDeparture": "2026-06-23T02:12:00+05:30", "actualArrival": "2026-06-23T02:22:00+05:30", "actualDeparture": null, "delayArrival": 12, "delayDeparture": null, "status": "upcoming", "distance": 96, "platform": "3" },
+      { "sequence": 4, "stationCode": "SVDK", "stationName": "Shri Mata Vaishno Devi Katra", "isHalt": true, "lat": 32.99, "lng": 74.93, "scheduledArrival": "2026-06-24T12:05:00+05:30", "scheduledDeparture": null, "actualArrival": "2026-06-24T12:17:00+05:30", "actualDeparture": null, "delayArrival": 12, "delayDeparture": null, "status": "upcoming", "distance": 1640, "platform": "2" }
+    ],
+    "isLive": true
+  },
+  "meta": { "traceId": "550e8400-e29b-41d4-a716-446655440000", "timestamp": "2026-06-23T01:15:00+05:30", "executionTime": 38, "source": "database" }
+}

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="RailTrack Live">
+  <rect width="32" height="32" rx="7" fill="#1e3a8a"/>
+  <rect x="9" y="5" width="14" height="16" rx="4" fill="#fff"/>
+  <rect x="11.5" y="8" width="9" height="5" rx="1.2" fill="#1e3a8a"/>
+  <circle cx="12.5" cy="17" r="1.4" fill="#1e3a8a"/>
+  <circle cx="19.5" cy="17" r="1.4" fill="#1e3a8a"/>
+  <path d="M11 21 8 27M21 21l3 6M9.5 24.5h13" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/>
+</svg>

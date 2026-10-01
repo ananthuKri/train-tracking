@@ -1,0 +1,80 @@
+# Local infrastructure for RailTrack Live.
+#   docker compose up -d postgres redis          # databases only (run the apps with `npm run dev`)
+#   docker compose --profile mail up -d mailpit  # optional local SMTP inbox at http://localhost:8025
+#   docker compose --profile app up -d --build   # full stack (API + worker serving the built web app)
+name: railtrack
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-railtrack}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-railtrack}
+      POSTGRES_DB: ${POSTGRES_DB:-railtrack}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-railtrack} -d $${POSTGRES_DB:-railtrack}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit:latest
+    profiles: ["mail"]
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+
+  api:
+    profiles: ["app"]
+    build: .
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-railtrack}:${POSTGRES_PASSWORD:-railtrack}@postgres:5432/${POSTGRES_DB:-railtrack}
+      REDIS_URL: redis://redis:6379
+      FRONTEND_URL: ${APP_BASE_URL:-http://localhost:8000}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8000}
+    command: ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+
+  worker:
+    profiles: ["app"]
+    build: .
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-railtrack}:${POSTGRES_PASSWORD:-railtrack}@postgres:5432/${POSTGRES_DB:-railtrack}
+      REDIS_URL: redis://redis:6379
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8000}
+    command: ["node", "dist/worker.js"]
+    depends_on:
+      api: { condition: service_started }
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:

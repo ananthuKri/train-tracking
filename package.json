@@ -1,0 +1,31 @@
+{
+  "name": "railtrack-live",
+  "version": "1.0.0",
+  "private": true,
+  "description": "RailTrack Live — track Indian trains from licensed data providers, visualise journeys and email reports.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n api,worker,web -c blue,magenta,green \"npm:dev -w @railtrack/api\" \"npm:dev:worker -w @railtrack/api\" \"npm:dev -w @railtrack/web\"",
+    "build": "npm run build -w @railtrack/api && npm run build -w @railtrack/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:e2e": "npm run test:e2e -w @railtrack/web",
+    "db:up": "docker compose up -d postgres redis",
+    "db:migrate": "npm run db:migrate -w @railtrack/api",
+    "db:deploy": "npm run db:deploy -w @railtrack/api",
+    "openapi": "npm run openapi -w @railtrack/api",
+    "samples": "node scripts/generate-samples.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "5.9.3"
+  }
+}

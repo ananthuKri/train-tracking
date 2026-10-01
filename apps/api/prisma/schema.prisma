@@ -1,0 +1,243 @@
+// RailTrack Live database schema.
+// All DateTime columns are stored as timestamptz in UTC; journey dates are IST calendar dates (YYYY-MM-DD).
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  role         UserRole @default(USER)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  trackingRequests        TrackingRequest[]
+  monitoringSubscriptions MonitoringSubscription[]
+  emailReports            EmailReport[]
+  auditLogs               AuditLog[]
+}
+
+enum TrackingSource {
+  MANUAL
+  UPLOAD
+  MONITORING
+  API
+}
+
+/// One "track these trains" action (manual entry, upload, or a monitoring check).
+model TrackingRequest {
+  id           String         @id @default(cuid())
+  userId       String?
+  user         User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  source       TrackingSource
+  provider     String
+  /// [{ trainNumber, journeyDate, ok, errorCode, snapshotId }]
+  items        Json
+  validCount   Int
+  invalidCount Int
+  successCount Int
+  failureCount Int
+  createdAt    DateTime       @default(now()) @db.Timestamptz(3)
+
+  snapshots TrainSnapshot[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([createdAt])
+}
+
+/// A verified provider response, normalised. The latest one per train/date is the "last verified result".
+model TrainSnapshot {
+  id                String           @id @default(cuid())
+  trackingRequestId String?
+  trackingRequest   TrackingRequest? @relation(fields: [trackingRequestId], references: [id], onDelete: SetNull)
+  trainNumber       String           @db.VarChar(5)
+  journeyDate       String           @db.VarChar(10)
+  provider          String
+  isDemo            Boolean
+  trainName         String
+  state             String
+  delayMinutes      Int?
+  lastStationCode   String?
+  nextStationCode   String?
+  progressPercent   Float?
+  positionKind      String?
+  lat               Float?
+  lng               Float?
+  providerUpdatedAt DateTime?        @db.Timestamptz(3)
+  fetchedAt         DateTime         @db.Timestamptz(3)
+  /// Full NormalizedTrainStatus as returned to clients.
+  payload           Json
+  createdAt         DateTime         @default(now()) @db.Timestamptz(3)
+
+  @@index([trainNumber, journeyDate, fetchedAt(sort: Desc)])
+  @@index([fetchedAt])
+}
+
+/// Cached static route/timetable per train and provider.
+model TrainRouteStop {
+  id                 String   @id @default(cuid())
+  trainNumber        String   @db.VarChar(5)
+  provider           String
+  trainName          String
+  sequence           Int
+  stationCode        String
+  stationName        String
+  lat                Float?
+  lng                Float?
+  distanceKm         Float?
+  day                Int?
+  scheduledArrival   String?  @db.VarChar(5)
+  scheduledDeparture String?  @db.VarChar(5)
+  haltMinutes        Int?
+  isHalt             Boolean  @default(true)
+  platform           String?
+  updatedAt          DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([trainNumber, provider, sequence])
+  @@index([stationCode])
+}
+
+enum MonitoringStatus {
+  ACTIVE
+  PAUSED
+  STOPPED
+  COMPLETED
+  ERROR
+}
+
+model MonitoringSubscription {
+  id                  String           @id @default(cuid())
+  userId              String
+  user                User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trainNumber         String           @db.VarChar(5)
+  journeyDate         String           @db.VarChar(10)
+  trainName           String?
+  intervalMinutes     Int
+  /// AlertRules
+  rules               Json
+  recipients          String[]
+  status              MonitoringStatus @default(ACTIVE)
+  lastCheckedAt       DateTime?        @db.Timestamptz(3)
+  lastAlertAt         DateTime?        @db.Timestamptz(3)
+  nextCheckAt         DateTime?        @db.Timestamptz(3)
+  /// Compact summary of the previous check, used to detect changes.
+  lastKnown           Json?
+  /// Alert keys already sent (prevents duplicate emails).
+  firedAlerts         String[]         @default([])
+  alertCount          Int              @default(0)
+  consecutiveFailures Int              @default(0)
+  lastError           String?
+  createdAt           DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime         @updatedAt @db.Timestamptz(3)
+
+  emailReports EmailReport[]
+
+  @@index([userId, status])
+  @@index([status])
+}
+
+enum EmailReportKind {
+  REPORT
+  ALERT
+}
+
+enum EmailStatus {
+  QUEUED
+  SENT
+  PARTIAL
+  FAILED
+}
+
+enum RecipientStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+/// Audit record of every report/alert email.
+model EmailReport {
+  id                       String                  @id @default(cuid())
+  userId                   String?
+  user                     User?                   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  kind                     EmailReportKind
+  monitoringSubscriptionId String?
+  monitoringSubscription   MonitoringSubscription? @relation(fields: [monitoringSubscriptionId], references: [id], onDelete: SetNull)
+  subject                  String
+  fields                   String[]
+  /// [{ trainNumber, journeyDate }]
+  trains                   Json
+  status                   EmailStatus             @default(QUEUED)
+  delivery                 String                  @default("smtp")
+  error                    String?
+  /// HMAC of the public share token — the token itself is never stored.
+  shareTokenHash           String?                 @unique
+  shareExpiresAt           DateTime?               @db.Timestamptz(3)
+  /// Frozen NormalizedTrainStatus[] served by the share link.
+  sharedSnapshot           Json?
+  createdAt                DateTime                @default(now()) @db.Timestamptz(3)
+  sentAt                   DateTime?               @db.Timestamptz(3)
+
+  recipients EmailReportRecipient[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([monitoringSubscriptionId])
+}
+
+model EmailReportRecipient {
+  id            String          @id @default(cuid())
+  emailReportId String
+  emailReport   EmailReport     @relation(fields: [emailReportId], references: [id], onDelete: Cascade)
+  email         String
+  status        RecipientStatus @default(QUEUED)
+  messageId     String?
+  error         String?
+  sentAt        DateTime?       @db.Timestamptz(3)
+
+  @@index([emailReportId])
+}
+
+/// One row per outbound provider call (no keys, no user data).
+model ProviderUsageLog {
+  id          String   @id @default(cuid())
+  provider    String
+  operation   String
+  trainNumber String?  @db.VarChar(5)
+  outcome     String
+  httpStatus  Int?
+  latencyMs   Int
+  errorCode   String?
+  message     String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([provider, createdAt(sort: Desc)])
+}
+
+/// Security/audit trail. Metadata must never contain secrets or recipient addresses.
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String?
+  entityId   String?
+  metadata   Json?
+  ipHash     String?
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([action, createdAt(sort: Desc)])
+}
