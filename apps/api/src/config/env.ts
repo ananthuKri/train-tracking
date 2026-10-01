@@ -29,6 +29,10 @@ const optionalString = z.preprocess(emptyToUndefined, z.string().optional());
 const bool = (fallback: boolean) =>
   z.preprocess(emptyToUndefined, z.enum(['true', 'false', '1', '0']).optional()).transform((v) => (v === undefined ? fallback : v === 'true' || v === '1'));
 
+/** Web-scraping sources, in the order they can be configured. */
+export const SCRAPER_IDS = ['railyatri', 'whereismytrain'] as const;
+export type ScraperId = (typeof SCRAPER_IDS)[number];
+
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(8000),
@@ -48,6 +52,19 @@ const EnvSchema = z.object({
   INDIAN_RAIL_API_KEY: optionalString,
   INDIAN_RAIL_API_BASE_URL: z.string().url().default('https://indianrailapi.com/api/v2'),
   MOCK_FAILURE_RATE: z.coerce.number().min(0).max(1).default(0),
+  /** Web scrapers tried before the API, in order, e.g. "railyatri,whereismytrain" (empty = API only). */
+  SCRAPER_PROVIDERS: z
+    .preprocess(emptyToUndefined, z.string().optional())
+    .transform((v) => (v ? v.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean) : undefined))
+    .pipe(z.array(z.enum(SCRAPER_IDS)).optional()),
+  /** Older single-scraper setting; used when SCRAPER_PROVIDERS is not set. */
+  SCRAPER_PROVIDER: z.preprocess(emptyToUndefined, z.enum(SCRAPER_IDS).optional()),
+  /** Scraping attempts per source per lookup before trying the next source. */
+  SCRAPER_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(5).default(2),
+  /** Pause scraping for this long after repeated failed lookups. */
+  SCRAPER_COOLDOWN_MINUTES: z.coerce.number().int().min(1).max(240).default(5),
+  /** Honest identification sent to scraped sites; defaults to "RailTrackLive/1.0 (+APP_BASE_URL)". */
+  SCRAPER_USER_AGENT: optionalString,
   PROVIDER_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
   /** Override the active provider's per-minute request cap (match your plan's burst limit). */
   PROVIDER_MAX_PER_MINUTE: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1).max(1000).optional()),
@@ -79,6 +96,8 @@ export interface AppConfig extends Env {
   adminEmails: Set<string>;
   smtpConfigured: boolean;
   emailOutboxDir: string;
+  /** Web scrapers to try before the API, in order. */
+  scrapers: ScraperId[];
   /** Problems worth surfacing at startup (never contains secret values). */
   warnings: string[];
 }
@@ -119,6 +138,13 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
   if (!env.DATABASE_URL) warnings.push('DATABASE_URL is not set; history, auth, reports and monitoring are unavailable.');
   if (!env.REDIS_URL) warnings.push('REDIS_URL is not set; using in-memory cache and monitoring is disabled.');
   if (env.TRAIN_DATA_PROVIDER === 'mock') warnings.push('TRAIN_DATA_PROVIDER=mock — all train data is simulated DEMO DATA.');
+  const scrapers = [...new Set(env.SCRAPER_PROVIDERS ?? (env.SCRAPER_PROVIDER ? [env.SCRAPER_PROVIDER] : []))];
+  if (scrapers.length && env.TRAIN_DATA_PROVIDER === 'mock') warnings.push('Web scraping is ignored in demo mode (TRAIN_DATA_PROVIDER=mock).');
+  if (scrapers.length && env.TRAIN_DATA_PROVIDER !== 'mock') {
+    warnings.push(
+      `Web scraping enabled (${scrapers.join(' → ')}) with ${env.TRAIN_DATA_PROVIDER} as the last fallback. Scraped data is unofficial; review each site's terms of use.`,
+    );
+  }
   if (isProduction && env.TRAIN_DATA_PROVIDER === 'mock') warnings.push('Running the demo simulator in production.');
 
   return {
@@ -135,6 +161,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     ),
     smtpConfigured,
     emailOutboxDir: env.EMAIL_OUTBOX_DIR ?? path.join(API_ROOT, '.mail-outbox'),
+    scrapers,
     warnings,
   };
 }

@@ -8,7 +8,7 @@ import { z } from 'zod';
 export const isoInstant = z.iso.datetime({ offset: true });
 export const journeyDateSchema = z.iso.date();
 
-export const PROVIDER_IDS = ['railradar', 'railkit', 'indianrailapi', 'mock'] as const;
+export const PROVIDER_IDS = ['railyatri', 'whereismytrain', 'railradar', 'railkit', 'indianrailapi', 'mock'] as const;
 export const ProviderIdSchema = z.enum(PROVIDER_IDS);
 export type ProviderId = z.infer<typeof ProviderIdSchema>;
 

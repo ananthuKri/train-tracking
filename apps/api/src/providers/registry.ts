@@ -1,5 +1,5 @@
 import type { NormalizedRoute, NormalizedTrainStatus, ProviderHealth, ProviderId, ProviderInfo } from '@railtrack/shared';
-import type { AppConfig } from '../config/env.ts';
+import type { AppConfig, ScraperId } from '../config/env.ts';
 import { AppError, ProviderError } from '../lib/errors.ts';
 import type { FetchLike } from '../lib/http.ts';
 import { RateLimiter } from '../lib/rateLimiter.ts';
@@ -7,6 +7,9 @@ import { IndianRailApiProvider } from './indianRailApi.ts';
 import { MockProvider } from './mock.ts';
 import { RailKitProvider } from './railkit.ts';
 import { RailRadarProvider } from './railradar.ts';
+import { RailYatriScraperProvider } from './railyatri.ts';
+import { WhereIsMyTrainScraperProvider } from './whereIsMyTrain.ts';
+import { ScrapeFirstProvider, type ScrapeFirstOptions } from './scrapeFirst.ts';
 import type { ProviderLimits, TrainDataProvider } from './types.ts';
 
 export type CallOutcome = 'success' | 'error' | 'rate_limited' | 'not_found';
@@ -61,6 +64,9 @@ export class GuardedProvider implements TrainDataProvider {
   }
   get docsUrl(): string | null {
     return this.inner.docsUrl;
+  }
+  get sourceIds(): ProviderId[] {
+    return [this.inner.id];
   }
   isConfigured(): boolean {
     return this.inner.isConfigured();
@@ -147,8 +153,25 @@ function failedHealth(provider: TrainDataProvider, err: unknown): ProviderHealth
   };
 }
 
+/** What the tracking service talks to: one provider, or the scraper with an API fallback. */
+export interface ActiveProvider extends TrainDataProvider {
+  /** Provider ids whose results it can return (used to find the last verified result). */
+  readonly sourceIds: ProviderId[];
+}
+
+export interface ScrapingSetup {
+  /** Scrapers in priority order; the active API provider is the last resort. */
+  scraperIds: ProviderId[];
+  maxAttempts: number;
+  cooldownMs: number;
+  retryDelayMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+  onEvent?: ScrapeFirstOptions['onEvent'];
+}
+
 export class ProviderRegistry {
   private readonly providers: Map<ProviderId, GuardedProvider>;
+  private readonly activeProvider: ActiveProvider;
 
   constructor(
     providers: TrainDataProvider[],
@@ -156,14 +179,31 @@ export class ProviderRegistry {
     usage: UsageSink,
     /** Limit overrides applied to the active provider (e.g. a higher plan quota). */
     activeOverrides: Partial<ProviderLimits> = {},
+    /** When set, the scrapers are tried first (in order) and the active provider is the fallback. */
+    scraping?: ScrapingSetup,
   ) {
     this.providers = new Map(providers.map((p) => [p.id, new GuardedProvider(p, usage, p.id === activeId ? activeOverrides : {})]));
     if (!this.providers.has(activeId)) throw new Error(`Unknown TRAIN_DATA_PROVIDER "${activeId}"`);
+    const api = this.providers.get(activeId)!;
+    const scrapers = (scraping?.scraperIds ?? []).map((id) => {
+      const scraper = this.providers.get(id);
+      if (!scraper) throw new Error(`Unknown scraper "${id}"`);
+      return scraper;
+    });
+    this.activeProvider = scraping && scrapers.length
+      ? new ScrapeFirstProvider(scrapers, api, {
+          maxAttempts: scraping.maxAttempts,
+          cooldownMs: scraping.cooldownMs,
+          retryDelayMs: scraping.retryDelayMs,
+          sleep: scraping.sleep,
+          onEvent: scraping.onEvent,
+        })
+      : api;
   }
 
   /** The provider used for all lookups. There is deliberately no silent fallback to demo data. */
-  get active(): GuardedProvider {
-    return this.providers.get(this.activeId)!;
+  get active(): ActiveProvider {
+    return this.activeProvider;
   }
 
   list(): GuardedProvider[] {
@@ -171,23 +211,51 @@ export class ProviderRegistry {
   }
 
   async health(options: { force?: boolean } = {}): Promise<ProviderHealth[]> {
-    return Promise.all(
-      this.list().map(async (p) => ({ ...(await p.healthCheck(options)), active: p.id === this.activeId })),
-    );
+    const activeIds = this.activeProvider.sourceIds;
+    return Promise.all(this.list().map(async (p) => ({ ...(await p.healthCheck(options)), active: activeIds.includes(p.id) })));
   }
 }
 
-export function createProviderRegistry(config: AppConfig, usage: UsageSink, options: { fetchImpl?: FetchLike; now?: () => Date } = {}): ProviderRegistry {
+export interface RegistryOptions {
+  fetchImpl?: FetchLike;
+  now?: () => Date;
+  /** Hook for scraper fallback/pause events (logging). */
+  onScrapeEvent?: ScrapeFirstOptions['onEvent'];
+}
+
+export function createProviderRegistry(config: AppConfig, usage: UsageSink, options: RegistryOptions = {}): ProviderRegistry {
   const common = { timeoutMs: config.PROVIDER_TIMEOUT_MS, fetchImpl: options.fetchImpl, now: options.now };
+  // Scraping never mixes with demo mode: the simulator stays fully simulated.
+  const scraperIds = config.TRAIN_DATA_PROVIDER === 'mock' ? [] : config.scrapers;
+  const providers: TrainDataProvider[] = [
+    new RailRadarProvider({ ...common, apiKey: config.RAILRADAR_API_KEY, baseUrl: config.RAILRADAR_BASE_URL }),
+    new RailKitProvider({ ...common, apiKey: config.RAILKIT_API_KEY, baseUrl: config.RAILKIT_BASE_URL }),
+    new IndianRailApiProvider({ ...common, apiKey: config.INDIAN_RAIL_API_KEY, baseUrl: config.INDIAN_RAIL_API_BASE_URL }),
+    new MockProvider({ failureRate: config.MOCK_FAILURE_RATE, now: options.now }),
+  ];
+  const scraperOptions = {
+    userAgent: config.SCRAPER_USER_AGENT ?? `RailTrackLive/1.0 (+${config.APP_BASE_URL})`,
+    timeoutMs: config.PROVIDER_TIMEOUT_MS,
+    fetchImpl: options.fetchImpl,
+    now: options.now,
+  };
+  const scraperFactories: Record<ScraperId, () => TrainDataProvider> = {
+    railyatri: () => new RailYatriScraperProvider(scraperOptions),
+    whereismytrain: () => new WhereIsMyTrainScraperProvider(scraperOptions),
+  };
+  providers.unshift(...scraperIds.map((id) => scraperFactories[id]()));
   return new ProviderRegistry(
-    [
-      new RailRadarProvider({ ...common, apiKey: config.RAILRADAR_API_KEY, baseUrl: config.RAILRADAR_BASE_URL }),
-      new RailKitProvider({ ...common, apiKey: config.RAILKIT_API_KEY, baseUrl: config.RAILKIT_BASE_URL }),
-      new IndianRailApiProvider({ ...common, apiKey: config.INDIAN_RAIL_API_KEY, baseUrl: config.INDIAN_RAIL_API_BASE_URL }),
-      new MockProvider({ failureRate: config.MOCK_FAILURE_RATE, now: options.now }),
-    ],
+    providers,
     config.TRAIN_DATA_PROVIDER,
     usage,
     config.PROVIDER_MAX_PER_MINUTE ? { maxPerMinute: config.PROVIDER_MAX_PER_MINUTE } : {},
+    scraperIds.length
+      ? {
+          scraperIds,
+          maxAttempts: config.SCRAPER_MAX_ATTEMPTS,
+          cooldownMs: config.SCRAPER_COOLDOWN_MINUTES * 60_000,
+          onEvent: options.onScrapeEvent,
+        }
+      : undefined,
   );
 }

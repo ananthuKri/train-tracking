@@ -329,6 +329,8 @@
           "id": {
             "type": "string",
             "enum": [
+              "railyatri",
+              "whereismytrain",
               "railradar",
               "railkit",
               "indianrailapi",
@@ -836,6 +838,8 @@
           "provider": {
             "type": "string",
             "enum": [
+              "railyatri",
+              "whereismytrain",
               "railradar",
               "railkit",
               "indianrailapi",
@@ -1264,6 +1268,8 @@
           "provider": {
             "type": "string",
             "enum": [
+              "railyatri",
+              "whereismytrain",
               "railradar",
               "railkit",
               "indianrailapi",
@@ -1683,7 +1689,6 @@
           }
         },
         "required": [
-          "recipients",
           "trains",
           "includeShareLink"
         ],
@@ -2646,7 +2651,6 @@
           }
         },
         "required": [
-          "recipients",
           "trains"
         ]
       },

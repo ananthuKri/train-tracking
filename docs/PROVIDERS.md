@@ -1,9 +1,9 @@
 # Train-data provider evaluation
 
-RailTrack Live never scrapes websites. Every byte of train data comes from a documented, key-authenticated
-HTTP API through the `TrainDataProvider` interface (`apps/api/src/providers/types.ts`). This page records
-what was verified about each candidate provider on **2026-10-01** from their public documentation only
-(no accounts were created and no live calls were made).
+All train data flows through the `TrainDataProvider` interface (`apps/api/src/providers/types.ts`). By default
+the public RailYatri page is scraped first and a key-authenticated API is the fallback (see
+[RailYatri web scraping](#railyatri-web-scraping--primary-by-choice)). This page records what was verified about
+each source on **2026-10-01**.
 
 > **Important licensing note.** None of the three providers is an official Indian Railways, CRIS or NTES
 > service, and each one says so in its own terms. "Licensed" here means *you hold a commercial licence from
@@ -66,3 +66,40 @@ outbound `RateLimiter` plus a short live cache (`liveCacheSeconds`) and a long r
    `retryable`.
 3. Register it in `createProviderRegistry()` and add the id to `PROVIDER_IDS` in `packages/shared`.
 4. Add fixture-based tests like `apps/api/test/unit/providers.test.ts`.
+
+## RailYatri web scraping — primary (by choice)
+
+Enabled with `SCRAPER_PROVIDER=railyatri` (`RailYatriScraperProvider` + `ScrapeFirstProvider`). Chosen because its
+public live-status page is reachable without a CAPTCHA, `robots.txt` allows `/live-train-status/`, and the page
+embeds structured JSON (`__NEXT_DATA__`) with the full route (coordinates, platforms, scheduled times), the
+current/last station, delay, ETAs and alerts such as diversions. Findings on 2026-10-01:
+
+* `?start_day=N` selects the journey that started N days ago (0 = today); older or future dates go to the API.
+* Live data includes `data_from: "ntes"` and an `update_time`; RailYatri's own disclaimer calls running status
+  *crowd-sourced*, and `gps_unable: true` means positions are station-based, so they are shown as **estimated**.
+* RailYatri's terms-of-use page loads its text with JavaScript, so it could **not** be reviewed automatically.
+  etrain.info was rejected because its disclaimer limits use to "Personal Non-Commercial Use".
+* Guard rails: `robots.txt` honoured, honest `User-Agent`, one request at a time, at least 2 s apart, at most
+  20 per minute, 60 s cache, no CAPTCHA/bot-check bypass, and only the public HTML page is read (no private
+  RailYatri endpoints).
+* Scraping is fragile by nature: a page redesign shows up as failures, and lookups then use the API.
+
+Disable scraping with `SCRAPER_PROVIDER=` (empty) if the site objects or its terms do not permit your use.
+
+## WhereIsMyTrain.org.in web scraping — second (by choice)
+
+Enabled by listing `whereismytrain` in `SCRAPER_PROVIDERS` (`WhereIsMyTrainScraperProvider`). An independent
+site (its terms: "Not affiliated with IRCTC or Indian Railways"; train data "remain the property of Indian
+Railways"); it is **not** Google's "Where is my Train" app. Findings on 2026-10-01:
+
+* `robots.txt` allows everything; an honest request gets the page directly. Pages load Cloudflare's passive
+  script (`/cdn-cgi/challenge-platform/scripts/jsd/main.js`), which is not a challenge. If Cloudflare ever
+  serves a real challenge, the scraper fails over — browser cookies such as `cf_clearance` are never
+  replayed and challenges are never solved.
+* Live status (`/?trainNo={train}`) is server-rendered HTML: one card per halt with platform, delay and
+  actual/expected vs scheduled times, plus a train marker after the last passed halt. The site's only JSON
+  endpoint (`/api/search.php`) is a name autocomplete, so it is not used.
+* Times are `hh:mm AM/PM` without dates and only the latest journey is shown, so the scraper answers only
+  while the train is en route and recently updated (≤ 6 h); the journey date is derived from the times.
+  Unknown trains still render an old journey (e.g. "Train 11111"), which these checks reject.
+* No coordinates or distances; they are borrowed from the cached route (RailYatri) for the map and progress.

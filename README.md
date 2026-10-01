@@ -3,9 +3,11 @@
 Track one or many Indian Railways trains, see each journey on a map, filter and export the results, email
 custom reports with a CSV attachment, and set up server-side monitoring alerts.
 
-* **Licensed APIs only.** Data comes from documented, key-authenticated provider APIs behind a provider
-  abstraction. No scraping, no CAPTCHA/rate-limit/login-wall evasion, no private RailYatri or Where Is My Train
-  endpoints. See [docs/PROVIDERS.md](docs/PROVIDERS.md) for the provider evaluation and licensing caveats.
+* **Web scraping first, API last.** Public live-status pages are read first — RailYatri, then
+  whereismytrain.org.in (2 attempts each) — and the configured provider API (e.g. RailRadar) is the last
+  resort. Scraping respects `robots.txt`, identifies itself honestly, is rate limited, and never bypasses
+  CAPTCHAs, bot checks or login walls (no replayed browser cookies). Set `SCRAPER_PROVIDERS=` (empty) for
+  API-only. See [Data sources](#data-sources) and [docs/PROVIDERS.md](docs/PROVIDERS.md) for caveats.
 * **Honest data labels.** Every train view, export and email names the data source and shows when the data
   was updated. Positions are labelled **reported** (the provider supplied a coordinate) or **estimated**
   (interpolated between stations — never presented as GPS). Demo mode is labelled **DEMO DATA** everywhere.
@@ -17,6 +19,7 @@ custom reports with a CSV attachment, and set up server-side monitoring alerts.
 - [Quick start (demo mode)](#quick-start-demo-mode)
 - [Architecture](#architecture)
 - [Configuration](#configuration)
+- [Data sources](#data-sources)
 - [Provider API keys](#provider-api-keys)
 - [Email (SMTP) setup](#email-smtp-setup)
 - [Monitoring worker](#monitoring-worker)
@@ -94,6 +97,7 @@ apps/web  (React + Vite + Tailwind + shadcn/ui + Leaflet)
 apps/api  (Express 5 + Zod)  ── Prisma 7 ── PostgreSQL
    │   ├─ TrackingService: cache → coalesce → rate limiter → provider → snapshot / last-verified fallback
    │   ├─ ProviderRegistry → GuardedProvider (rate limit, usage log, health cache)
+   │   │      ├─ ScrapeFirstProvider: RailYatriScraperProvider (web, 2 tries) → API fallback
    │   │      ├─ RailRadarProvider   ├─ RailKitProvider
    │   │      ├─ IndianRailApiProvider └─ MockProvider (demo)
    │   ├─ EmailReportService (Nodemailer, per-recipient audit, share links)
@@ -144,11 +148,41 @@ repository root (and optionally `apps/api/.env`). Only `.env.example` is committ
 | `ADMIN_EMAILS` | Accounts that get the admin role on sign-up (provider usage page) |
 | `MAPBOX_TOKEN` | Optional *public* (`pk.`) Mapbox token; otherwise OpenStreetMap tiles |
 | `TRUST_PROXY` | Number of proxies in front of the API (correct client IPs for rate limiting) |
+| `SCRAPER_PROVIDERS` | Scrapers tried before the API, in order: `railyatri,whereismytrain`; empty = API only (ignored in demo mode) |
+| `SCRAPER_MAX_ATTEMPTS`, `SCRAPER_COOLDOWN_MINUTES` | Scraping tries per lookup (default 2) and pause after repeated failures (default 5 min) |
 | `PROVIDER_MAX_PER_MINUTE` | Requests/minute to the active provider (default is free-tier safe: RailRadar 10); set to your plan's burst limit |
 
 There is deliberately **no silent fallback to demo data**: if the selected provider has no key, requests
 return `PROVIDER_NOT_CONFIGURED` ("Live data temporarily unavailable") and the provider page shows
 "not configured".
+
+## Data sources
+
+Each lookup tries the sources in `SCRAPER_PROVIDERS` order (default `railyatri,whereismytrain`), each up to
+`SCRAPER_MAX_ATTEMPTS` (default **2**) times, and uses the API only when every scraper has failed:
+
+1. **RailYatri (web)** — `https://www.railyatri.in/live-train-status/{train}?start_day={days ago}`. Reads the
+   JSON the page embeds (`__NEXT_DATA__`): full route with coordinates, current/last station, delay, ETAs,
+   alerts. Covers today and the previous 4 days.
+2. **WhereIsMyTrain.org.in (web)** — `https://whereismytrain.org.in/?trainNo={train}` (an independent site,
+   not Google's "Where is my Train" app). Parses the server-rendered station cards. Its times carry no dates,
+   so it answers only while the train is en route and the page was updated in the last 6 hours; the
+   journey date is worked out from the times. Coordinates/distances are borrowed from the cached route.
+3. **Provider API (`TRAIN_DATA_PROVIDER`, e.g. RailRadar)** — the last resort. Needs its API key in `.env`.
+4. **Last verified result** — if everything fails, the newest stored result is shown, labelled "Live data
+   temporarily unavailable".
+
+Rules for every scraper: `robots.txt` checked first (cached for a day); honest
+`User-Agent: RailTrackLive/1.0 (+APP_BASE_URL)` (override with `SCRAPER_USER_AGENT`); one request at a time,
+2–3 s apart, ≤ 20/minute; 60 s live cache; no browser cookies. A CAPTCHA, bot check, HTTP error or changed
+page layout counts as a failure and is never bypassed. A site that fails twice in a row for site-level
+reasons is skipped for `SCRAPER_COOLDOWN_MINUTES` (default 5) — but only when an API key is configured;
+"no data for this train" never pauses a site.
+
+Every result keeps the label of the source that produced it ("RailYatri (web)", "WhereIsMyTrain.org.in
+(web)" or "RailRadar") with its update time. Scraped data is unofficial — RailYatri calls its status
+crowd-sourced — so review each site's terms before relying on it, especially commercially. Demo mode
+(`TRAIN_DATA_PROVIDER=mock`) never scrapes.
 
 ## Provider API keys
 

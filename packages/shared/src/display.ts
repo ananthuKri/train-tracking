@@ -14,6 +14,8 @@ export const STATE_META: Record<TrainState, { label: string; description: string
 };
 
 export const PROVIDER_NAMES: Record<ProviderId, string> = {
+  railyatri: 'RailYatri (web)',
+  whereismytrain: 'WhereIsMyTrain.org.in (web)',
   railradar: 'RailRadar',
   railkit: 'RailKit',
   indianrailapi: 'IndianRailAPI',

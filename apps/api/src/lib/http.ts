@@ -82,14 +82,40 @@ export async function getJson(
   url: string,
   options: { headers?: Record<string, string>; timeoutMs: number; fetchImpl?: FetchLike },
 ): Promise<JsonResponse> {
+  const res = await getText(provider, url, { ...options, headers: { accept: 'application/json', ...options.headers } });
+  let body: unknown = null;
+  if (res.text) {
+    try {
+      body = JSON.parse(res.text);
+    } catch {
+      body = null;
+    }
+  }
+  return { status: res.status, ok: res.ok, headers: res.headers, body, latencyMs: res.latencyMs };
+}
+
+export interface TextResponse {
+  status: number;
+  ok: boolean;
+  headers: Headers;
+  text: string;
+  latencyMs: number;
+}
+
+/** GET a text document (HTML, robots.txt) with a hard timeout; network failures become retryable ProviderErrors. */
+export async function getText(
+  provider: string,
+  url: string,
+  options: { headers?: Record<string, string>; timeoutMs: number; fetchImpl?: FetchLike; followRedirects?: boolean },
+): Promise<TextResponse> {
   const started = performance.now();
   let response: Response;
   try {
     response = await (options.fetchImpl ?? fetch)(url, {
       method: 'GET',
-      headers: { accept: 'application/json', ...options.headers },
+      headers: options.headers,
       signal: AbortSignal.timeout(options.timeoutMs),
-      redirect: 'error',
+      redirect: options.followRedirects ? 'follow' : 'error',
     });
   } catch (err) {
     const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
@@ -99,13 +125,5 @@ export async function getJson(
     });
   }
   const text = await response.text();
-  let body: unknown = null;
-  if (text) {
-    try {
-      body = JSON.parse(text);
-    } catch {
-      body = null;
-    }
-  }
-  return { status: response.status, ok: response.ok, headers: response.headers, body, latencyMs: Math.round(performance.now() - started) };
+  return { status: response.status, ok: response.ok, headers: response.headers, text, latencyMs: Math.round(performance.now() - started) };
 }

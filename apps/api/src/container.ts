@@ -95,7 +95,14 @@ export function createDeps(config: AppConfig, overrides: DepOverrides = {}): App
       .catch((err: unknown) => logger.warn({ err }, 'could not record provider usage'));
   };
 
-  const providers = createProviderRegistry(config, usage, { fetchImpl: overrides.fetchImpl, now: overrides.now });
+  const providers = createProviderRegistry(config, usage, {
+    fetchImpl: overrides.fetchImpl,
+    now: overrides.now,
+    onScrapeEvent: (e) =>
+      e.type === 'paused'
+        ? warnOnce(`scraper-paused:${e.provider}`, { provider: e.provider, reason: e.reason }, `${e.provider} scraping paused after repeated site failures`)
+        : logger.info({ provider: e.provider, next: e.next, reason: e.reason }, `${e.provider} could not answer; trying ${e.next}`),
+  });
   const tracking = new TrackingService({ providers, cache, db, logger, now: overrides.now });
   const mailer = overrides.mailer ?? createMailer(config);
   const scheduler = overrides.scheduler !== undefined ? overrides.scheduler : redis ? new BullMonitoringScheduler(redis, (err) => warnOnce('queue', { reason: describeError(err) }, 'monitoring queue unavailable')) : null;

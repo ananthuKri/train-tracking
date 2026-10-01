@@ -12,6 +12,7 @@ import { AppError, isTransientProviderError } from '../lib/errors.ts';
 import type { Logger } from '../lib/logger.ts';
 import type { Db } from '../lib/prisma.ts';
 import type { Prisma } from '../generated/prisma/client.ts';
+import { finalizeStatus } from '../providers/normalize.ts';
 import type { ProviderRegistry } from '../providers/registry.ts';
 
 /** How long the last verified result stays available as a fallback (beyond the live cache). */
@@ -75,6 +76,7 @@ export class TrackingService {
     try {
       let status = await provider.getLiveStatus(trainNumber, journeyDate);
       status = await this.fillTrainName(status);
+      status = await this.fillCoordinatesFromRoute(status);
       await Promise.all([
         this.deps.cache.set(key, status, provider.limits.liveCacheSeconds),
         this.deps.cache.set(lastGoodKey(provider.id, trainNumber, journeyDate), status, LAST_GOOD_TTL_SECONDS),
@@ -89,7 +91,7 @@ export class TrackingService {
       if (!(err instanceof AppError)) this.deps.logger.error({ err, trainNumber }, 'live status failed');
 
       if (isTransientProviderError(err)) {
-        const lastGood = await this.lastVerified(provider.id, trainNumber, journeyDate);
+        const lastGood = await this.lastVerified(provider.id, provider.sourceIds, trainNumber, journeyDate);
         if (lastGood) {
           const asOf = formatIst(lastGood.providerUpdatedAt ?? lastGood.fetchedAt);
           return {
@@ -204,13 +206,14 @@ export class TrackingService {
     }
   }
 
-  private async lastVerified(provider: ProviderId, trainNumber: string, journeyDate: string): Promise<NormalizedTrainStatus | null> {
-    const cached = await this.deps.cache.get<NormalizedTrainStatus>(lastGoodKey(provider, trainNumber, journeyDate));
+  private async lastVerified(cacheId: ProviderId, sourceIds: ProviderId[], trainNumber: string, journeyDate: string): Promise<NormalizedTrainStatus | null> {
+    const cached = await this.deps.cache.get<NormalizedTrainStatus>(lastGoodKey(cacheId, trainNumber, journeyDate));
     if (cached) return cached;
     if (!this.deps.db) return null;
     try {
       const row = await this.deps.db.trainSnapshot.findFirst({
-        where: { trainNumber, journeyDate, provider },
+        // Any source behind the active provider (scraper or API fallback) counts as verified data.
+        where: { trainNumber, journeyDate, provider: { in: sourceIds } },
         orderBy: { fetchedAt: 'desc' },
         select: { payload: true },
       });
@@ -219,6 +222,50 @@ export class TrackingService {
       this.deps.logger.warn({ err }, 'could not read last verified snapshot');
       return null;
     }
+  }
+
+  /**
+   * Some sources (e.g. whereismytrain.org.in) give no coordinates or distances. Borrow them from the train's
+   * route — cached for a day, and scraped from a source that has them — then recompute the estimated
+   * position and progress. Provider-reported positions are never replaced.
+   */
+  private async fillCoordinatesFromRoute(status: NormalizedTrainStatus): Promise<NormalizedTrainStatus> {
+    const missing = status.stops.some((s) => s.lat === null || s.distanceKm === null);
+    if (!missing || status.stops.length === 0) return status;
+    let route: NormalizedRoute;
+    try {
+      route = await this.getRoute(status.trainNumber);
+    } catch {
+      return status;
+    }
+    const byCode = new Map(route.stops.map((s) => [s.stationCode, s]));
+    let filled = 0;
+    const stops = status.stops.map((s) => {
+      const r = byCode.get(s.stationCode);
+      if (!r) return s;
+      const next = {
+        ...s,
+        lat: s.lat ?? r.lat,
+        lng: s.lng ?? r.lng,
+        distanceKm: s.distanceKm ?? r.distanceKm,
+      };
+      if (next.lat !== s.lat || next.distanceKm !== s.distanceKm) filled++;
+      return next;
+    });
+    if (!filled) return status;
+    return finalizeStatus(
+      status.provider.id,
+      {
+        ...status,
+        stops,
+        position: status.position?.kind === 'reported' ? status.position : null,
+        distanceTravelledKm: null,
+        distanceRemainingKm: null,
+        progressPercent: null,
+        totalDistanceKm: status.totalDistanceKm ?? route.totalDistanceKm,
+      },
+      this.now(),
+    );
   }
 
   /** Some providers omit the train name in live responses; use the stored route name when known. */
